@@ -1,7 +1,7 @@
 import socket
 import ssl
 from openssl_engine_capi import *
-from openssl_engine_capi.utils import (
+from openssl_engine_capi.urllib3 import (
     WindowsSSLContext,
     get_capi_store_certs,
     trusted_certs,

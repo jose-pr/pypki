@@ -20,10 +20,14 @@ def remove(path:str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Install .pth files which inject the WindowsSSLContext into urllib3 and pip')
-    parser.add_argument('--user', help='Install in user site-packages', action="store_true")
+    parser.add_argument('--user', help='Install or remove from user site-packages', action="store_true")
+    parser.add_argument("--site_path", help="Install or remove inject_capi .pth and .py here instead of the user or system site-packages")
     parser.add_argument("--remove", help="Remove inject script instead of installing them", action="store_true")
     args = parser.parse_args()
-    site_path = site.USER_SITE if args.user else sysconfig.get_paths()["purelib"]
+    if args.site_path:
+        site_path = args.site_path
+    else:
+        site_path = site.USER_SITE if args.user else sysconfig.get_paths()["purelib"]
     inject_script = os.path.join(MODULE_PATH, "_inject_capi.py")
     dst = os.path.join(site_path, "inject_capi.py")
     pth_path = os.path.join(site_path, "inject_capi.pth")

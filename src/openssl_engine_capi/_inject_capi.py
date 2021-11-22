@@ -8,13 +8,14 @@ import types
 
 INJECT_INTO_MODULES = ["urllib3", "pip"]
 
+
 class CapiUrllib3InjectLoader(SourceFileLoader):
     def exec_module(self, module: types.ModuleType) -> None:
         super().exec_module(module)
         if module.__name__ in ["urllib3", "pip"] and find_spec("openssl_engine_capi"):
-            import openssl_engine_capi.utils
+            import openssl_engine_capi.urllib3
 
-            openssl_engine_capi.utils.inject_into_urllib3(module.__name__)
+            openssl_engine_capi.urllib3.inject_into_urllib3(module.__name__)
 
 
 class CapiUrllib3InjectFinder(MetaPathFinder):
@@ -48,13 +49,15 @@ def inject():
     sys.meta_path.insert(0, CapiUrllib3InjectFinder())
 
 
-def remove(path:str):
+def remove(path: str):
     if os.path.exists(path):
         os.remove(path)
+
 
 def cleanup():
     if not find_spec("openssl_engine_capi"):
         remove(__file__)
-        remove(os.path.join(os.path.dirname(__file__),"inject_capi.pth"))
+        remove(os.path.join(os.path.dirname(__file__), "inject_capi.pth"))
+
 
 atexit.register(cleanup)
