@@ -1,4 +1,4 @@
-from setuptools import setup
+from setup_init import *
 
 setup(name='openssl_engine_capi',
       version='1.0',
