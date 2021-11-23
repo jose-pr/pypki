@@ -1,16 +1,15 @@
 from __future__ import annotations
 from typing import cast
 import os
-from cffi import FFI
+#from cffi import FFI
 from OpenSSL.SSL import Context as SSLContext, _ffi as ffi, _lib as lib
 from .utils import FdOutputGrabber
 
-_ffi = FFI()
-ffi: FFI = cast(FFI, ffi)
+#_ffi = FFI()
 NULL = ffi.NULL
-_ffi.cdef("int SSL_CTX_set_client_cert_engine(void *ctx, void *e);")
+#_ffi.cdef("int SSL_CTX_set_client_cert_engine(void *ctx, void *e);")
 
-libssl = _ffi.dlopen("libssl-1_1.dll")
+#libssl = _ffi.dlopen("libssl-1_1.dll")
 
 
 class SSLEngine:
@@ -113,7 +112,7 @@ class SSLEngine:
 
 
 def set_client_cert_engine(self: SSLContext, engine: ffi.CData | SSLEngine | str):
-    if not libssl.SSL_CTX_set_client_cert_engine(self._context, SSLEngine(engine).ptr):
+    if not lib.SSL_CTX_set_client_cert_engine(self._context, SSLEngine(engine).ptr):
         raise Exception("Was not able to set client cert engine")
 
 

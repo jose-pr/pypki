@@ -16,7 +16,7 @@ class DEBUG_LEVEL(Enum):
     TRACE = 2
 
 class CAPIEngine(SSLEngine):
-    def __init__(self, src: FFI.CData | str | SSLEngine = "capi") -> None:
+    def __init__(self, src: str | SSLEngine = "capi") -> None:
         super().__init__(src)
 
     def set_store(self, name: str):

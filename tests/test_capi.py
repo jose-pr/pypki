@@ -75,4 +75,4 @@ if __name__ == "__main__":
     test_list_certs()
     test_capi_and_ssl_certs()
     test_ssl_socket()
-   # test_requests()
+    test_requests()
