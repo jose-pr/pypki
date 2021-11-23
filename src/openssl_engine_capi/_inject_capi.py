@@ -6,16 +6,16 @@ from importlib.abc import MetaPathFinder
 from importlib.machinery import SourceFileLoader
 import types
 
+
 INJECT_INTO_MODULES = ["urllib3", "pip"]
 
 
 class CapiUrllib3InjectLoader(SourceFileLoader):
     def exec_module(self, module: types.ModuleType) -> None:
         super().exec_module(module)
-        if module.__name__ in ["urllib3", "pip"] and find_spec("openssl_engine_capi"):
-            import openssl_engine_capi.urllib3
-
-            openssl_engine_capi.urllib3.inject_into_urllib3(module.__name__)
+        if find_spec("openssl_engine_capi.urllib3"):
+            from openssl_engine_capi import urllib3 as capi_urllib3
+            capi_urllib3.inject_into_urllib3(module.__name__)
 
 
 class CapiUrllib3InjectFinder(MetaPathFinder):

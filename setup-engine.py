@@ -3,7 +3,7 @@
 from setup_init import *
 
 setup(
-    name="openssl_engine",
+    name="openssl-engine",
     version="1.0",
     description="Python openssl engine support",
     author="Jose A.",
