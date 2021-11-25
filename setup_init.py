@@ -1,7 +1,7 @@
 import os
+import pathlib
 import shutil
-import types
-from typing import cast, Type
+from typing import Type
 from setuptools import setup as _setup
 
 root = os.path.dirname(__file__)
@@ -25,6 +25,7 @@ def pre_setup():
         if path.endswith(".egg-info"):
             remove_dir(os.path.join(root, "src", path))
 
+
 def post_setup():
     arts = os.path.join(root, "artifacts")
     if not os.path.exists(arts):
@@ -39,9 +40,24 @@ def post_setup():
 
         remove_dir(os.path.join(root, "build"))
 
+
 def setup(*args, **kwargs):
     pre_setup()
-    _setup(*args,**kwargs)
+
+    name: str = kwargs["name"].replace("-", "_")
+    readme = (pathlib.Path(__file__).parent / "src" / name / "README.md").read_text()
+    _setup(
+        *args,
+        long_description=readme,
+        long_description_content_type="text/markdown",
+        author="Jose A.",
+        author_email="jose-pr@coqui.dev",
+        url="https://github.com/jose-pr/pypki",
+        package_dir={"": "src"},
+        packages=[name],
+        **kwargs
+    )
     post_setup()
 
-setup:Type[_setup] = setup
+
+setup: Type[_setup] = setup

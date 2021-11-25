@@ -12,7 +12,7 @@ from openssl_engine import set_client_cert_engine
 from . import DISPLAY_FORMAT, CAPIEngine
 
 TRUSTED_STORES = ["ROOT", "CA"]
-
+DEFAULT_SSL_OPTIONS = (ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_2)
 
 def get_capi_store_certs(storename: str):
     with CAPIEngine() as capi:
@@ -41,17 +41,8 @@ def trusted_certs(
     return certs
 
 
-URLLIB3 = False
-
-
 class WindowsSSLContext:
     pass
-
-
-if lib_util.find_spec("urllib3"):
-   # from urllib3.contrib.pyopenssl import PyOpenSSLContext
-
-    URLLIB3 = True
 
 
 def declareContext(urllib3: str = "urllib3"):
@@ -59,7 +50,7 @@ def declareContext(urllib3: str = "urllib3"):
 
         pyopenssl = importlib.import_module(urllib3 + ".contrib.pyopenssl")
         urllib3_util = importlib.import_module(urllib3 + ".util")
-        ssl_context  = pyopenssl.PyOpenSSLContext
+        ssl_context = pyopenssl.PyOpenSSLContext
 
         if not hasattr(urllib3_util, "WindowsSSLContext"):
 
@@ -67,12 +58,16 @@ def declareContext(urllib3: str = "urllib3"):
                 def __init__(
                     self,
                     protocol=ssl.PROTOCOL_TLS_CLIENT,
-                    options: ssl.Options =  ssl.OP_NO_TLSv1_2 | ssl.OP_NO_TLSv1_3,
+                    options: ssl.Options | None = None,
                     trusted_stores: list[str] = None,
                 ):
                     super().__init__(protocol)
+
                     if options is not None:
                         self.options = options
+                    elif DEFAULT_SSL_OPTIONS is not None:
+                        self.options = DEFAULT_SSL_OPTIONS
+
                     store = self._ctx.get_cert_store()
                     for cert in trusted_certs(trusted_stores):
                         store.add_cert(cert)
@@ -105,15 +100,17 @@ def inject_into_urllib3(urllib3: str = "urllib3"):
 
 
 def extract_from_urllib3(context: ssl.SSLContext, urllib3: str = "urllib3"):
-    pyopenssl =importlib.import_module(urllib3 + ".contrib.pyopenssl")
+    pyopenssl = importlib.import_module(urllib3 + ".contrib.pyopenssl")
     pyopenssl.extract_from_urllib3()
     if context:
         _set_urllib3_sslcontext(context, urllib3)
 
+def inject_into(name:str):
+    inject_into_urllib3(name)
 
 def inject():
     inject_into_urllib3("urllib3")
     inject_into_urllib3("pip._vendor.urllib3")
 
-WindowsSSLContext = declareContext()
 
+WindowsSSLContext = declareContext()
