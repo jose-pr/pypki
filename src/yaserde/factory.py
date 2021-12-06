@@ -17,6 +17,11 @@ class ParseError(Exception):
         self.item = item
         self.error = error
 
+class MissingAttributeError(ParseError):
+    def __init__(self, attr) -> None:
+        self.attr = attr
+        super().__init__(None, None)
+
 
 class ParseAttributeError(ParseError):
     def __init__(self, item, error, attr) -> None:

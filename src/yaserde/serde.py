@@ -5,65 +5,106 @@ from typing import Iterable, OrderedDict, Sequence, get_type_hints, Type
 from typing_extensions import Self
 
 
-from .utils import T, R, StructLike, map_iter_to_list, dictcopy
-from .factory import ParseOptions, ParseAttributeError, ParseError, TypeFactory, TypeFactoryContext
+from .utils import (
+    T,
+    R,
+    StructLike,
+    is_dunder,
+    is_private,
+    make_private,
+    map_iter_to_list,
+    dictcopy,
+)
+from .factory import (
+    MissingAttributeError,
+    ParseOptions,
+    ParseAttributeError,
+    ParseError,
+    TypeFactory,
+    TypeFactoryContext,
+)
+
+import re
+
+NOT_ALLOWED_IN_ID = re.compile("[^a-zA-Z0-9_]")
+
 
 class MetaStruct(type):
+    @staticmethod
+    def get_key(cls: Type[Struct], name: str) -> str:
+        qname, factory = cls.__ATTR_FACTORIES__.get(name, (None, None))
+        return qname if qname else name
 
     @staticmethod
-    def escape_name(name:str):
-        return f"__{name}"
-    @staticmethod
-    def get_key(cls:Type[Struct], name:str):
-        qname = cls.__ATTR_MAP__.get(name, None)
-        return f"_{cls.__name__}{qname}" if qname else name
+    def get_factories(cls: Type[Struct]) -> OrderedDict[str, (str, TypeFactory)]:
+        return cls.__ATTR_FACTORIES__
 
-    def __new__(metacls:MetaStruct, cls_name:str, bases:Sequence[Type], dctn:dict[str]):
-        _hints:list[(str, Type)] = []
+    def __new__(
+        metacls: MetaStruct, cls_name: str, bases: Sequence[Type], dctn: dict[str]
+    ):
+        _hints: list[(str, (str, Type))] = []
         dctn["__slots__"] = tuple()
-        dctn['__ATTR_FACTORIES__'] = OrderedDict()
+        dctn["__ATTR_FACTORIES__"] = OrderedDict()
         object_hook = None
-        methods:list[str] = list(dctn.keys())
+        methods: list[str] = map_iter_to_list(lambda k: k, dctn.keys())
         for cls in bases:
-            methods.extend(map_iter_to_list(lambda m: m[0], inspect.getmembers(cls, predicate=inspect.isfunction)))
-            object_hook = getattr(cls, 'factory_struct_hook', None)
-            _hints.extend(getattr(cls, '__ATTR_FACTORIES__', {}).items())
+            methods.extend(
+                map_iter_to_list(
+                    lambda m: m[0],
+                    inspect.getmembers(cls),
+                )
+            )
+            object_hook = getattr(cls, "factory_struct_hook", None)
+            _hints.extend(getattr(cls, "__ATTR_FACTORIES__", {}).items())
 
-        object_hook = dctn.get('factory_struct_hook', object_hook)
-        _hints.extend(dctn.get("__annotations__", {}).items())
-        for pos, name, hint  in dctn.get('__EXTRA_HINTS__', []):
-            _hints.insert(pos, (name, hint))
+        object_hook = dctn.get("factory_struct_hook", object_hook)
+        _hints.extend(
+            (
+                (name, (None, hint))
+                for name, hint in dctn.get("__annotations__", {}).items()
+            )
+        )
+        for pos, name, hint in dctn.get("__EXTRA_HINTS__", []):
+            _hints.insert(pos, (name, (None, hint)))
 
-        dctn["__ATTR_MAP__"] = {}
-        for name, hint in _hints:
-            dctn['__ATTR_FACTORIES__'][name] = hint if isinstance(hint, TypeFactory) else TypeFactory(hint, object_hook=object_hook)
-            if name not in dctn["__slots__"]:
-                if name in methods:
-                    escaped = metacls.escape_name(name)
-                    dctn["__ATTR_MAP__"][name] = escaped
-                    name = escaped
-                dctn["__slots__"] += (name,)
+        methods = set(methods)
+        for name, (escaped, hint) in _hints:
+            if escaped is None:
+                escaped = re.sub(NOT_ALLOWED_IN_ID, "_", name).lstrip('_')
+
+                while escaped in dctn["__slots__"] or escaped in methods:
+                    escaped += "_"
+
+                dctn["__slots__"] += (escaped,)
+                #escaped = f"_{cls_name}{escaped}"
+
+            dctn["__ATTR_FACTORIES__"][name] = (
+                escaped,
+                (
+                    hint
+                    if isinstance(hint, TypeFactory)
+                    else TypeFactory(hint, object_hook=object_hook)
+                ),
+            )
 
         return type.__new__(metacls, cls_name, bases, dctn)
 
-class Struct(metaclass = MetaStruct):
-    __EXTRA_HINTS__ = []
-    def __new__(cls, *srcs:object, **src):
+
+class Struct(metaclass=MetaStruct):
+    def __new__(cls, *srcs: object, **src):
         options = ParseOptions()
         for src in srcs or [{}]:
             if not isinstance(src, ParseOptions):
                 if src.__class__ is cls and not options.copy:
-                    return cls
+                    return src
                 break
             else:
                 options = src
 
-        obj = object.__new__(cls)
-        return obj
-
+        return object.__new__(cls)
 
     def __init__(self, *srcs, **src) -> None:
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
         options = ParseOptions()
         depth = options.next().copy
         for src in [*srcs, src]:
@@ -72,62 +113,73 @@ class Struct(metaclass = MetaStruct):
                 depth = options.next().copy
             else:
                 cls.update(self, src, depth)
-            
-    def __contains__(self, key:str):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
-        return key in cls.__ATTR_FACTORIES__
 
-    def __getitem__(self, key:str):
-        return  getattr(self, key)
+    def __contains__(self, key: str):
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
+        return key in MetaStruct.get_factories(cls)
 
-    def get(self, key:str, default:T = None) -> T:
-        return  getattr(self,  key, default)
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default: T = None) -> T:
+        return getattr(self, key, default)
+
+    def __dir__(self):
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
+        for key in MetaStruct.get_factories(cls):
+            yield key
 
     def items(self):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
-        for key in cls.__ATTR_FACTORIES__:
-            yield key, getattr(self, key)
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
+        for key in MetaStruct.get_factories(cls):
+            try:
+                yield key, getattr(self, key)
+            except:
+                pass
 
     @staticmethod
-    def factory_struct_hook(factory:TypeFactory, src:object, options:ParseOptions):
-        return  factory.type(options, src) if issubclass(factory.type, Struct) else factory.type(src)
-          
-    def __setitem__(self, name:str, value, copy_depth:int = 0):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
-        factory =  cls.__ATTR_FACTORIES__.get(name, None)
+    def factory_struct_hook(factory: TypeFactory, src: object, options: ParseOptions):
+        return (
+            factory.type(options, src)
+            if issubclass(factory.type, Struct)
+            else factory.type(src)
+        )
+
+    def __setitem__(self, name: str, value, copy_depth: int = 0):
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
+        escaped, factory = MetaStruct.get_factories(cls).get(name, (None, None))
         if factory:
             cls.__setattr__(self, name, factory(value, ParseOptions(copy_depth)))
-       
+
     def __getattribute__(self, key: str):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
-        return  object.__getattribute__(self, MetaStruct.get_key(cls, key))
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
+        return object.__getattribute__(self, MetaStruct.get_key(cls, key))
 
     def __setattr__(self, name: str, value) -> None:
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
         object.__setattr__(self, MetaStruct.get_key(cls, name), value)
 
-    def __delitem__(self, key:str):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
-        super().__delitem__(self,  MetaStruct.get_key(cls, key))
-
+    def __delitem__(self, key: str):
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
+        super().__delitem__(self, MetaStruct.get_key(cls, key))
 
     def __copy__(self):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
         clone = cls.__new__(cls)
         for name, value in cls.items(self):
-            setattr(clone, name, value)            
+            setattr(clone, name, value)
         return clone
 
     def __deepclone__(self, memo):
-        cls:Type[Struct] = object.__getattribute__(self, '__class__')
+        cls: Type[Struct] = object.__getattribute__(self, "__class__")
         clone = cls.__new__(cls)
         memo[id(self)] = clone
         for name, value in cls.items(self):
-            setattr(clone, name, deepcopy(value, memo))  
+            setattr(clone, name, deepcopy(value, memo))
         return clone
 
     @classmethod
-    def validate_value(cls, value:object):
+    def validate_value(cls, value: object):
         if isinstance(value, ParseError):
             raise value
         elif isinstance(value, Struct):
@@ -137,11 +189,16 @@ class Struct(metaclass = MetaStruct):
                 cls.validate_value(val)
 
     @classmethod
-    def validate(cls, obj:StructLike) -> Self:
+    def validate(cls, obj: StructLike) -> Self:
         obj = cls(ParseOptions(0), obj)
-        for attr, value in obj.__dict__.items():
+        for attr in MetaStruct.get_factories(cls):
             try:
+                value = getattr(obj, attr)
                 cls.validate_value(value)
+            except AttributeError as e:
+                raise MissingAttributeError([attr])
+            except MissingAttributeError as e:
+                raise MissingAttributeError([attr, *e.attr])
             except ParseAttributeError as e:
                 raise ParseAttributeError(e.item, e.error, [attr, *e.attr])
             except ParseError as e:
@@ -151,7 +208,7 @@ class Struct(metaclass = MetaStruct):
     def update(
         self,
         struct: StructLike,
-        copy_depth:int = 0,
+        copy_depth: int = 0,
     ) -> None:
         if struct is not self:
             for prop, value in struct.__class__.items(struct):
