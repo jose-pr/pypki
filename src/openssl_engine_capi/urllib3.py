@@ -1,9 +1,10 @@
 import ssl
 from typing import Callable, cast
-from OpenSSL import crypto
+from OpenSSL import crypto, SSL
 
 import importlib
 from importlib import util as lib_util
+from attr import has
 
 from platformdirs import importlib
 
@@ -12,7 +13,7 @@ from openssl_engine import set_client_cert_engine
 from . import DISPLAY_FORMAT, CAPIEngine
 
 TRUSTED_STORES = ["ROOT", "CA"]
-DEFAULT_SSL_OPTIONS = (ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_2)
+DEFAULT_SSL_OPTIONS = None
 
 def get_capi_store_certs(storename: str):
     with CAPIEngine() as capi:
@@ -63,19 +64,20 @@ def declareContext(urllib3: str = "urllib3"):
                 ):
                     super().__init__(protocol)
 
-                    if options is not None:
-                        self.options = options
-                    elif DEFAULT_SSL_OPTIONS is not None:
-                        self.options = DEFAULT_SSL_OPTIONS
-
                     store = self._ctx.get_cert_store()
                     for cert in trusted_certs(trusted_stores):
                         store.add_cert(cert)
                     self._capi = CAPIEngine()
                     set_client_cert_engine(self._ctx, self._capi)
 
+                    if options is not None:
+                        self.options = options
+                    elif DEFAULT_SSL_OPTIONS is not None:
+                        self.options = DEFAULT_SSL_OPTIONS
+
                 def __del__(self):
-                    self._capi.free()
+                    if hasattr(self, "_capi"):
+                        self._capi.free()
 
             urllib3_util.WindowsSSLContext = WindowsSSLContext
         return urllib3_util.WindowsSSLContext
