@@ -7,10 +7,9 @@
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.analysis.extraPaths": [
-        "${workspaceFolder}",
         "${workspaceFolder}/src"
     ],
     "terminal.integrated.env.windows": {
-        "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder};${env:PYTHONPATH}"
+        "PYTHONPATH": "${workspaceFolder}/src;${env:PYTHONPATH}"
     }
 }

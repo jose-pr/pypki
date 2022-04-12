@@ -1,4 +1,5 @@
 from enum import Enum
+from OpenSSL import crypto
 from openssl_engine import *
 
 
@@ -16,15 +17,15 @@ class DEBUG_LEVEL(Enum):
     TRACE = 2
 
 class CAPIEngine(SSLEngine):
-    def __init__(self, src: str | SSLEngine = "capi") -> None:
+    def __init__(self, src: 'str | SSLEngine' = "capi") -> None:
         super().__init__(src)
 
     def set_store(self, name: str):
         self.ctrl_cmd_string("store_name", name)
 
     def list_certs(
-        self, store: str | None = None, format: DISPLAY_FORMAT | None = None
-    ) -> list[bytes]:
+        self, store: 'str | None' = None, format: 'DISPLAY_FORMAT | None' = None
+    ) -> 'list[bytes]':
         if format:
             self.ctrl_cmd_string("list_options", format.value)
         if store:
@@ -50,3 +51,9 @@ class CAPIEngine(SSLEngine):
 
     def list_containers(self):
         self.ctrl_cmd_string("list_containers")
+
+    def store_certs(self, storename: str):
+        return [
+            crypto.load_certificate(crypto.FILETYPE_PEM, cert)
+            for cert in self.list_certs(storename, DISPLAY_FORMAT.PEM)
+        ]

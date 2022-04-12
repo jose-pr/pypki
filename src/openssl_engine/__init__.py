@@ -4,6 +4,7 @@ from .utils import FdOutputGrabber
 
 _NULL = _ffi.NULL
 
+TRUSTED_STORES = ["ROOT", "CA"]
 
 class SSLEngine:
     def __init__(self, id: "str | _ffi.CData | SSLEngine") -> None:

@@ -1,7 +1,7 @@
 
 from OpenSSL import SSL
 from OpenSSL.SSL import Context as SSLContext, TLS_CLIENT_METHOD
-from src.openssl_engine import *
+from openssl_engine import *
 
 ctx = SSLContext(SSL.SSLv23_METHOD)
 
