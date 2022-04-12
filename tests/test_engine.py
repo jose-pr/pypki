@@ -1,16 +1,12 @@
 
-import socket
-import requests
-import pytest
-
 from OpenSSL import SSL
 from OpenSSL.SSL import Context as SSLContext, TLS_CLIENT_METHOD
-from openssl_engine import *
+from src.openssl_engine import *
 
 ctx = SSLContext(SSL.SSLv23_METHOD)
 
 def test_load_dynamic():
-    SSLEngine.load_dynamic("capi")
+    SSLEngine.load_dynamic("capi", path=r"C:\Program Files\OpenSSL-Win64\bin\capi.dll")
 
 def test_load_by_id():
     SSLEngine.load_by_id("capi")

@@ -6,7 +6,7 @@
         {
             "label": "Build",
             "type": "shell",
-            "command": "rm (Resolve-Path ${workspaceFolder}/dist/*) && python setup-capi.py bdist_wheel && python setup-engine.py bdist_wheel && python setup-engine.py sdist && python setup-capi.py sdist ",
+            "command": "python setup.py ${input:pkg} bdist_wheel && python ${input:pkg} setup.py sdist",
             "problemMatcher": []
         },
         {
@@ -20,6 +20,20 @@
             "dependsOn":["Build", "Install"],
             "dependsOrder": "sequence",
             "problemMatcher":[]
+        },
+        {
+            "label": "Publish",
+            "type": "shell",
+            "command": "python -m  twine upload -r pypi ./dist/${input:pkg}*",
+            "problemMatcher":[]
         }
+    ],
+    "inputs": [
+        {
+            "id": "pkg",
+            "description": "Package Name:",
+            "default": "openssl-engine",
+            "type": "promptString"
+        },
     ]
 }

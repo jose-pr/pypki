@@ -1,24 +1,20 @@
-from __future__ import annotations
-from typing import cast
 import os
-#from cffi import FFI
-from OpenSSL.SSL import Context as SSLContext, _ffi as ffi, _lib as lib
+from OpenSSL.SSL import Context as SSLContext, _ffi, _lib
 from .utils import FdOutputGrabber
 
-#_ffi = FFI()
-NULL = ffi.NULL
-#_ffi.cdef("int SSL_CTX_set_client_cert_engine(void *ctx, void *e);")
-
-#libssl = _ffi.dlopen("libssl-1_1.dll")
+_NULL = _ffi.NULL
 
 
 class SSLEngine:
-    def __init__(self, id: str | ffi.CData | SSLEngine) -> None:
+    def __init__(self, id: "str | _ffi.CData | SSLEngine") -> None:
         if isinstance(id, str):
             try:
                 eng = SSLEngine.load_by_id(id)
             except Exception:
-                eng = SSLEngine.load_dynamic(id)
+                try:
+                    eng = SSLEngine.load_dynamic(id)
+                except Exception:
+                    eng = SSLEngine.load_dynamic(id, path=id)
             ptr = eng.ptr
         elif isinstance(id, SSLEngine):
             ptr = id.ptr
@@ -28,12 +24,12 @@ class SSLEngine:
         self.ptr = ptr
 
     def init(self):
-        if not lib.ENGINE_init(self.ptr):
+        if not _lib.ENGINE_init(self.ptr):
             self.__exit__()
             raise Exception("Could not initialize engine")
 
     def free(self):
-        lib.ENGINE_free(self.ptr)
+        _lib.ENGINE_free(self.ptr)
 
     def __enter__(self):
         self.init()
@@ -45,19 +41,19 @@ class SSLEngine:
     def ctrl_cmd_string(
         self,
         cmd: str,
-        value: str | None = None,
+        value: "str | None" = None,
         optional: bool = False,
         capture: bool = False,
-    ) -> None | bytes:
+    ) -> "None | bytes":
 
         if capture:
-            capture: FdOutputGrabber = FdOutputGrabber()
+            capture: FdOutputGrabber = FdOutputGrabber("stdout")
             capture.start()
 
-        if not lib.ENGINE_ctrl_cmd_string(
+        if not _lib.ENGINE_ctrl_cmd_string(
             self.ptr,
             cmd.encode("utf-8"),
-            NULL if value == None else str(value).encode("utf-8"),
+            _NULL if value == None else str(value).encode("utf-8"),
             1 if optional else 0,
         ):
             if capture:
@@ -73,9 +69,9 @@ class SSLEngine:
     def load_by_id(id: str):
         if not id:
             raise ValueError("Id value must be provided")
-        lib.ENGINE_load_builtin_engines()
-        ptr = lib.ENGINE_by_id(id.encode())
-        if ptr == NULL:
+        _lib.ENGINE_load_builtin_engines()
+        ptr = _lib.ENGINE_by_id(id.encode())
+        if ptr == _NULL:
             raise ValueError("Could not load the {0} engine by id".format(id))
         return SSLEngine(ptr)
 
@@ -111,8 +107,8 @@ class SSLEngine:
         return dyn
 
 
-def set_client_cert_engine(self: SSLContext, engine: ffi.CData | SSLEngine | str):
-    if not lib.SSL_CTX_set_client_cert_engine(self._context, SSLEngine(engine).ptr):
+def set_client_cert_engine(self: SSLContext, engine: "_ffi.CData | SSLEngine | str"):
+    if not _lib.SSL_CTX_set_client_cert_engine(self._context, SSLEngine(engine).ptr):
         raise Exception("Was not able to set client cert engine")
 
 
