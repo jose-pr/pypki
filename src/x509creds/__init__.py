@@ -1,4 +1,4 @@
-from typing import Tuple, cast
+from typing import Literal, Tuple, cast, overload
 from functools import reduce
 from pathlib import Path
 from typing import List, NamedTuple
@@ -205,52 +205,17 @@ def load_store(
 
 Encoded = Tuple[bytes, Encoding]
 
-
 class X509Credentials(NamedTuple):
     cert: Certificate
     key: PrivateKey
-
-    def dump(self, encoding: Encoding, password: str = None):
-        encryption = (
-            NoEncryption()
-            if password is None
-            else BestAvailableEncryption(password.encode())
-        )
-        if encoding is Encoding.DER:
-            return self.cert.public_bytes(CryptEncoding.DER), self.key.private_bytes(
-                CryptEncoding.DER, PrivateFormat.PKCS8, encryption
-            )
-        elif encoding is Encoding.PEM:
-            return self.cert.public_bytes(CryptEncoding.PEM) + self.key.private_bytes(
-                CryptEncoding.PEM, PrivateFormat.PKCS8, encryption
-            )
-        elif encoding is Encoding.PKCS12:
-            return pkcs12.serialize_key_and_certificates(
-                self.cert.subject.rfc4514_string(),
-                self.key,
-                self.cert,
-                None,
-                encryption,
-            )
-        else:
-            raise ValueError(f"Invalid encoding {encoding}")
-
-    def load(self, cert: Encoded, key: Encoded = None, password: str = None):
-        cert, _key, _chain = load_store(*cert, password)
-        if key is None:
-            key = _key
-            if _key is None:
-                raise ValueError("Key not provided")
-        else:
-            key = load_key(*key, password)
-        return X509Credentials(cert, key)
-
-
-class X509FullCredentials(NamedTuple):
-    cert: Certificate
-    key: PrivateKey
     chain: "list[Certificate]"
-
+   
+    @overload
+    def dump(self, encoding: Literal[Encoding.PEM, Encoding.PKCS12], password: str = None) -> bytes:
+        pass
+    @overload
+    def dump(self, encoding: Literal[Encoding.DER], password: str = None) -> 'tuple[bytes, bytes, list[bytes]]':
+        pass
     def dump(self, encoding: Encoding, password: str = None):
         encryption = (
             NoEncryption()
@@ -308,4 +273,4 @@ class X509FullCredentials(NamedTuple):
             for data, encoding in chain:
                 _chain += load_certs(data, encoding, password)
 
-        return X509FullCredentials(cert, key, _chain)
+        return X509Credentials(cert, key, _chain)
