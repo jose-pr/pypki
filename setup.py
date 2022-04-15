@@ -5,7 +5,13 @@ from setuptools import setup as _setup, find_packages
 
 root = Path(__file__).parent
 PKG = sys.argv.pop(1)
-src = (root / "src" / PKG) 
+src = root / "src" / PKG
+
+(root / "dist").mkdir(exist_ok=True)
+if sys.argv[1] == "clean_dist":
+    for path in (root / "dist").iterdir():
+        path.unlink()
+    exit()
 
 
 def clean():
@@ -17,9 +23,10 @@ def clean():
             shutil.rmtree(path)
     shutil.rmtree(root / "build", ignore_errors=True)
 
-print(src)
+
 pkgs = find_packages(str(src))
 print(pkgs)
+
 
 def setup(*args, **kwargs):
     clean()
@@ -30,17 +37,17 @@ def setup(*args, **kwargs):
         long_description_content_type="text/markdown",
         author="Jose A.",
         author_email="jose-pr@coqui.dev",
-        url=f"https://github.com/jose-pr/{root.parent.name}/src/{PKG}",
+        url=f"https://github.com/jose-pr/{root.resolve().name}",
         package_dir={"": "src"},
-        packages=pkgs,
-        install_requires=(src/"requirements.txt").read_text().splitlines(),
+        packages=[PKG, *pkgs],
+        install_requires=(src / "requirements.txt").read_text().splitlines(),
         **kwargs,
     )
     clean()
 
 
 setup(
-    name=PKG,
+    name=PKG.replace("_", "-"),
     version=(src / "VERSION").read_text(),
-    description=(src /"DESCRIPTION").read_text(),
+    description=(src / "DESCRIPTION").read_text(),
 )

@@ -6,7 +6,7 @@
         {
             "label": "Build",
             "type": "shell",
-            "command": "python setup.py ${input:pkg} bdist_wheel && python ${input:pkg} setup.py sdist",
+            "command": "python setup.py ${input:pkg} clean_dist && python setup.py ${input:pkg} bdist_wheel && python setup.py ${input:pkg} sdist",
             "problemMatcher": []
         },
         {
@@ -24,7 +24,7 @@
         {
             "label": "Publish",
             "type": "shell",
-            "command": "python -m  twine upload -r pypi ./dist/${input:pkg}*",
+            "command": "python -m  twine upload -r pypi ./dist/*",
             "problemMatcher":[]
         }
     ],
@@ -32,7 +32,7 @@
         {
             "id": "pkg",
             "description": "Package Name:",
-            "default": "openssl-engine",
+            "default": "openssl_engine",
             "type": "promptString"
         },
     ]
