@@ -235,7 +235,7 @@ class X509Credentials(NamedTuple):
         else:
             raise ValueError(f"Invalid encoding {encoding}")
 
-    def load(self, cert: Encoded, key: Encoded, password: str = None):
+    def load(self, cert: Encoded, key: Encoded = None, password: str = None):
         cert, _key, _chain = load_store(*cert, password)
         if key is None:
             key = _key
@@ -290,7 +290,11 @@ class X509FullCredentials(NamedTuple):
             raise ValueError(f"Invalid encoding {encoding}")
 
     def load(
-        self, cert: Encoded, key: Encoded, chain: "list[Encoded]", password: str = None
+        self,
+        cert: Encoded,
+        key: Encoded = None,
+        chain: "list[Encoded]" = None,
+        password: str = None,
     ):
         cert, _key, _chain = load_store(*cert, password)
         if key is None:
