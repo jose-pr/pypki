@@ -30,9 +30,9 @@ class Encoding(IntEnum):
         if self is Encoding.PKCS12:
             return ["p12", "pfx", "pkcs12"]
         elif self is Encoding.PEM:
-            return ["pem", "key", "crt"]
+            return ["pem", "crt", "key"]
         elif self is Encoding.DER:
-            return ["cer", "der", "asn1"]
+            return ["der", "cer", "asn1"]
         else:
             raise ValueError(self)
 
@@ -253,9 +253,9 @@ class X509Credentials(NamedTuple):
             )
         else:
             raise ValueError(f"Invalid encoding {encoding}")
-
+    
+    @staticmethod
     def load(
-        self,
         cert: Encoded,
         key: Encoded = None,
         chain: "list[Encoded]" = None,

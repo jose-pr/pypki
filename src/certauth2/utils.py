@@ -40,11 +40,25 @@ def cert_builder(
         subject_name=subject,
         serial_number=x509.random_serial_number(),
         public_key=public_key,
+        issuer_name=issuer.subject if issuer else subject,
     )
     if is_ca or (is_ca is None and public_key == issuer_key):
         builder = builder.add_extension(
             x509.BasicConstraints(True, 0), critical=True
-        ).add_extension(x509.KeyUsage(key_cert_sign=True, crl_sign=True), critical=True)
+        ).add_extension(
+            x509.KeyUsage(
+                key_cert_sign=True,
+                crl_sign=True,
+                digital_signature=False,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
     builder = builder.add_extension(
         x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False
     ).add_extension(
