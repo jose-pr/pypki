@@ -1,10 +1,10 @@
 # =================================================================
 from argparse import ArgumentParser
 from pathlib import Path
-from certauth2.cache import FileCache
 from x509creds import X509Credentials
 from . import CERTS_DIR
 from . import CertificateAuthority
+from .cache import FileCache
 
 
 def main(args=None):

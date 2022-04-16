@@ -1,5 +1,10 @@
+
+
 Fork of https://github.com/ikreymer/certauth with a lot of changes. 
-Some of them are move to use cryptography.
+move to use cryptography.
+Ability to use password with the ca or host certificates
+Ability to select encoding to use for backend
+Ability to cache credentials in the desired format
 
 
 
@@ -28,7 +33,7 @@ File-based Certificate Cache
 
 .. code:: python
 
-   ca = CertificateAuthority('My Custom CA', 'my-ca.pem', cert_cache='/tmp/certs')
+   ca = CertificateAuthority(('My Custom CA', 'my-ca.pem', None), cache='/tmp/certs')
    filename = ca.cert_for_host('example.com')
 
 In this configuration, the root CA is stored at ``my-ca.pem`` and dynamically generated certs
@@ -44,8 +49,13 @@ In-memory Certificate Cache
 
 .. code:: python
 
-   ca = CertificateAuthority('My Custom CA', 'my-ca.pem', cert_cache=50)
-   cert, key = ca.load_cert('example.com')
+   from certauth2 import CertificateAuthority
+   from certauth2.utils import openssl_transform
+
+   ca = CertificateAuthority(
+      ("My Custom CA", "my-ca.pem", None), transform=openssl_transform, cache=50
+   )
+   cert, key, chain = ca.load_cert("example.com")
    
 This configuration stores the root CA at ``my-ca.pem`` but uses an in-memory certificate cache for dynamically created certs. 
 These certs are stored in an LRU cache, configured to keep at most 50 certs.
@@ -58,7 +68,6 @@ The ``cert`` and ``key`` can then be used with `OpenSSL.SSL.Context.use_certific
         context.use_privatekey(key)
         context.use_certificate(cert)
 
-
 Custom Cache
 ~~~~~~~~~~~~
 
@@ -66,22 +75,32 @@ A custom cache implementations which stores and retrieves per-host certificates 
 
 .. code:: python
 
+   from certauth2 import CertificateAuthority
+   from certauth2.cache import Cache
+
    ca = CertificateAuthority('My Custom CA', 'my-ca.pem', cert_cache=CustomCache())
    cert, key = ca.load_cert('example.com')
    
-   class CustomCache:
-       def __setitem__(self, host, cert_string):
-          # store cert_string for host
-          
-       def get(self, host):
-          # return cached cert_string, if available
-          cert_string = ...
-          return cert_string
+   class CustomCache(Cache):
+      def __init__(
+         self,
+         transform = lambda x: x,
+      ):
+         self._cache = {}
+         self._transform = transform
+
+      def __setitem__(self, key, item):
+         key = self._stored_as(key)
+         self._cache[key] = self._transform(item)
+      
+      def __getitem__(self, key):
+         key = self._stored_as(key)
+         return self._cache[key]
 
 
 Wildcard Certs
 ~~~~~~~~~~~~~~
-
+##TODO
 To reduce the number of certs generated, it is convenient to generate wildcard certs.
 
 .. code:: python
@@ -98,28 +117,16 @@ To automatically generate a wildcard cert for parent domain, use:
 
 This will also generate a cert for ``*.example.com``
 
-Starting with 1.3.0, ``certauth`` uses ``tldextract`` to determine the tld for a given host,
-and will not use a parent domain if it is itself a tld suffix.
-
-For example, calling:
-
-.. code:: python
-
-   cert, key = ca.load_cert('example.co.uk', wildcard=True, wildcard_for_parent=True)
-   
-will now result in a cert for ``*.example.co.uk``, not ``*.co.uk``.
-
 
 Alternative FQDNs or IPs in SAN
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Sometimes, you want to add alternative FQDNs or IPs as Subject Alternative Names
-to your certificate. To do that, simply use the ``cert_fqdns`` or ``cert_ips``
-params of ``load_cert``:
+to your certificate. To do that, simply use the ``sans`` params of ``load_cert``:
 
 .. code:: python
 
-   cert, key = ca.load_cert('example.com', cert_fqdns=['example.org'], cert_ips=['192.168.1.1'])
+   cert, key = ca.load_cert('example.com', sans=['example.org','192.168.1.1'])
 
 This will generate a cert for ``example.com`` with ``example.org`` and ``192.168.1.1`` in
 the SAN.
@@ -132,22 +139,25 @@ CLI Usage Examples
 
 ::
 
-  usage: certauth [-h] [-c CERTNAME] [-n HOSTNAME] [-d CERTS_DIR] [-f] [-w]
-                root_ca_cert
+   usage: __main__.py [-h] [-c ISSUERNAME] [--issuerpass ISSUERPASS] [-n HOSTNAME] [-d CERTS_DIR] [-f] [-S SANS] issuer
 
-  positional arguments:
-    root_ca_cert          Path to existing or new root CA file
+   Certificate Authority Cert Maker Tools
 
-  optional arguments:
-    -h, --help            show this help message and exit
-    -c CERTNAME, --certname CERTNAME
-                        Name for root certificate
-    -n HOSTNAME, --hostname HOSTNAME
-                        Hostname certificate to create
-    -d CERTS_DIR, --certs-dir CERTS_DIR
-                        Directory for host certificates
-    -f, --force           Overwrite certificates if they already exist
-    -w, --wildcard_cert   add wildcard SAN to host: *.<host>, <host>
+   positional arguments:
+   issuer                Path to existing CA or for a new root CA file
+
+   optional arguments:
+   -h, --help            show this help message and exit
+   -c ISSUERNAME, --issuername ISSUERNAME
+                           Name for issuer CA certificate
+   --issuerpass ISSUERPASS
+                           Issuer cert file password
+   -n HOSTNAME, --hostname HOSTNAME
+                           Hostname certificate to create
+   -d CERTS_DIR, --certs-dir CERTS_DIR
+                           Directory for host certificates
+   -f, --force           Overwrite certificates if they already exist
+   -S SANS, --sans SANS  add Subject Alternate Name to the cert
 
 
 

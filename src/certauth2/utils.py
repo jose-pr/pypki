@@ -1,7 +1,7 @@
 import ipaddress
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
-from x509creds import PrivateKey, X509Credentials, Certificate
+from x509creds import PrivateKey, X509Credentials, Certificate, Encoding
 
 DEF_KEY_SIZE = 2048
 DEF_PUBLIC_EXPONENT = 65537
@@ -16,6 +16,27 @@ def into_ip(ip: str):
 
 def is_ip(ip: str):
     return into_ip(ip) is not None
+
+
+def openssl_transform(creds: X509Credentials):
+    from OpenSSL import crypto
+    from x509creds import parse_pem
+
+    data = creds.dump(Encoding.PEM)
+
+    key:crypto.PKey = None
+    certs:'list[crypto.X509]' = []
+    for section, data in parse_pem(data):
+        if section == "CERTIFICATE":
+            certs.append(crypto.load_certificate(crypto.FILETYPE_PEM, data))
+        elif "PRIVATE KEY" in section and key is None:
+            key = crypto.load_privatekey(crypto.FILETYPE_PEM, data)
+
+    return (
+        certs[0],
+        key,
+        certs[1:],
+    )
 
 
 def cert_builder(

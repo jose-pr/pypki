@@ -94,3 +94,7 @@ class LRUCache(Cache[K, S, T, R]):
         self._cache[key] = self._transform(item)
         if len(self._cache) > self.max_size:
             self._cache.popitem(last=False)
+
+    def __getitem__(self, key: K) -> R:
+        key = self._stored_as(key)
+        return self._cache[key]

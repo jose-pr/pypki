@@ -26,15 +26,27 @@ def clean():
 
 pkgs = find_packages(str(src))
 print(pkgs)
+import mimetypes
+
+readme_file = next((f for f in src.iterdir() if f.stem == "README"), None)
+if readme_file:
+    readme = readme_file.read_text()
+    readme_type = mimetypes.guess_type(readme_file)[0]
+    if readme_type is None:
+        readme_type = f"text/x-{readme_file.suffix[1:]}"
+else:
+    readme = None
+    readme_type = None
 
 
 def setup(*args, **kwargs):
     clean()
-    readme = (src / "README.md").read_text()
     _setup(
         *args,
         long_description=readme,
-        long_description_content_type="text/markdown",
+        long_description_content_type=readme_type
+        if readme_type != "text/x-rst"
+        else None,
         author="Jose A.",
         author_email="jose-pr@coqui.dev",
         url=f"https://github.com/jose-pr/{root.resolve().name}",
