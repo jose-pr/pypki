@@ -198,24 +198,31 @@ def load_store(
                 key = load_pem_private_key(data, password)
         return certs[0], key, certs[1:]
     elif encoding is Encoding.DER:
-        return x509.load_der_x509_certificate(data), None, None
+        return x509.load_der_x509_certificate(data), None, []
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
 
 Encoded = Tuple[bytes, Encoding]
 
+
 class X509Credentials(NamedTuple):
     cert: Certificate
     key: PrivateKey
     chain: "list[Certificate]"
-   
+
     @overload
-    def dump(self, encoding: Literal[Encoding.PEM, Encoding.PKCS12], password: str = None) -> bytes:
+    def dump(
+        self, encoding: Literal[Encoding.PEM, Encoding.PKCS12], password: str = None
+    ) -> bytes:
         pass
+
     @overload
-    def dump(self, encoding: Literal[Encoding.DER], password: str = None) -> 'tuple[bytes, bytes, list[bytes]]':
+    def dump(
+        self, encoding: Literal[Encoding.DER], password: str = None
+    ) -> "tuple[bytes, bytes, list[bytes]]":
         pass
+
     def dump(self, encoding: Encoding, password: str = None):
         encryption = (
             NoEncryption()
@@ -228,12 +235,7 @@ class X509Credentials(NamedTuple):
                 self.key.private_bytes(
                     CryptEncoding.DER, PrivateFormat.PKCS8, encryption
                 ),
-                reduce(
-                    lambda acc, cert: acc.append(cert.public_bytes(CryptEncoding.DER)),
-                    self.chain,
-                    [],
-                )
-                or cast(List[bytes], []),
+                [ca.public_bytes(CryptEncoding.DER) for ca in self.chain],
             )
         elif encoding is Encoding.PEM:
             return self.key.private_bytes(
@@ -253,7 +255,7 @@ class X509Credentials(NamedTuple):
             )
         else:
             raise ValueError(f"Invalid encoding {encoding}")
-    
+
     @staticmethod
     def load(
         cert: Encoded,
