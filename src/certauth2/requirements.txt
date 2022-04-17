@@ -1,2 +1,2 @@
-x509creds==0.5.1
+x509creds==0.7.0
 tld; extra == 'tld'
