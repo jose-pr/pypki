@@ -169,7 +169,7 @@ class X509EncodedStore(ABC):
     def __enter__(self):
         return self.open()
 
-    def __exit__(self):
+    def __exit__(self, *args):
         self.close()
 
     def decode(self):
@@ -231,12 +231,15 @@ class __FileDecoder(NamedTuple):
             encoding = Encoding.from_suffix(path.suffix)
         elif isinstance(encoding, str):
             encoding = Encoding[encoding]
-
+    
         return _FileDecoder(path, encoding, encryption)
 
     def open(self, mode: str = "rb"):
-        with self.path.open(mode) as io:
-            return (io, self.encoding, self.encryption)
+        self._io = self.path.open(mode)
+        return (self._io, self.encoding, self.encryption)
+    
+    def close(self):
+        return self._io.close()
 
 
 class _FileDecoder(__FileDecoder, X509EncodedStore):

@@ -1,9 +1,13 @@
 
 
 Fork of https://github.com/ikreymer/certauth with a lot of changes. 
-move to use cryptography.
+
+Use cryptography.
+
 Ability to use password with the ca or host certificates
+
 Ability to select encoding to use for backend
+
 Ability to cache credentials in the desired format
 
 
@@ -11,8 +15,7 @@ Ability to cache credentials in the desired format
 Certificate Authority Certificate Maker Tools
 =============================================
 
-This package provides a small library, built on top of ``cryptography``, which allows for creating a custom certificate authority certificate,
-and genereating on-demand dynamic host certs using that CA certificate.
+This package provides a small library, built on top of ``cryptography``, which allows for creating a custom certificate authority certificate, and genereating on-demand dynamic host certs.
 
 It is most useful for use with a man-in-the-middle HTTPS proxy, for example, for recording or replaying web content.
 
@@ -23,7 +26,7 @@ CertificateAuthority API
 ============================
 
 The ``CertificateAuthority`` class provides an interface to manage a root CA and generate dynamic host certificates suitable
-for use with the native Python ``ssl`` library as well as pyOpenSSL ``SSL`` module.
+for use with the native Python ``ssl`` library as well as pyOpenSSL ``SSL`` module and also with the ``cryptography`` module.
 
 The class provides several options for storing the root CA and generated host CAs.
 
@@ -33,8 +36,17 @@ File-based Certificate Cache
 
 .. code:: python
 
-   ca = CertificateAuthority(('My Custom CA', 'my-ca.pem', None), cache='/tmp/certs')
-   filename = ca.cert_for_host('example.com')
+   # Create a store that returns paths to the files it created, also choose an encoding for saving the files
+   ## DER return 3 paths (cert, key, chain) , the chain is a tar archive with a der encoded file per cert in chain
+   ## PEM and PKCS12 return 1 path
+   certStore = ondiskPathStore("/tmp/certs", encoding=Encoding.PEM)
+
+   # First argument is the certificate to use the format for a file based certificate is:
+   ## A tuple with 3 elements: <filepath:str>, <cert_name:str|None>, <password:str|None> 
+   ## Or a single string: <filepath:str>
+   ca = CertificateAuthority(('my-ca.pem', 'My Custom CA', None), cache=certStore)
+
+   (filename,) = ca['example.com']
 
 In this configuration, the root CA is stored at ``my-ca.pem`` and dynamically generated certs
 are placed in ``/tmp/certs``. The ``filename`` returned would be ``/tmp/certs/example.com.pem`` in this example.
@@ -50,14 +62,14 @@ In-memory Certificate Cache
 .. code:: python
 
    from certauth2 import CertificateAuthority
-   from certauth2.utils import openssl_transform
-
    ca = CertificateAuthority(
-      ("My Custom CA", "my-ca.pem", None), transform=openssl_transform, cache=50
+      ("My Custom CA", "my-ca.pem", None), cache=50
    )
-   cert, key, chain = ca.load_cert("example.com")
+   cert, key, chain = ca["example.com"].to_pyopenssl()
    
 This configuration stores the root CA at ``my-ca.pem`` but uses an in-memory certificate cache for dynamically created certs. 
+By default the default store returns X509Credentials which are just a NamedTuple of (cert, key, chain) in ``cryptography`` format with methods to help load, dump and transform them into other formats.
+
 These certs are stored in an LRU cache, configured to keep at most 50 certs.
 
 The ``cert`` and ``key`` can then be used with `OpenSSL.SSL.Context.use_certificate <http://www.pyopenssl.org/en/stable/api/ssl.html#OpenSSL.SSL.Context.use_certificate>`_
@@ -67,6 +79,8 @@ The ``cert`` and ``key`` can then be used with `OpenSSL.SSL.Context.use_certific
         context = SSl.Context(...)
         context.use_privatekey(key)
         context.use_certificate(cert)
+        for ca in chain:
+         context.add_extra_chain_cert(ca)
 
 Custom Cache
 ~~~~~~~~~~~~
@@ -78,9 +92,6 @@ A custom cache implementations which stores and retrieves per-host certificates 
    from certauth2 import CertificateAuthority
    from certauth2.cache import Cache
 
-   ca = CertificateAuthority('My Custom CA', 'my-ca.pem', cert_cache=CustomCache())
-   cert, key = ca.load_cert('example.com')
-   
    class CustomCache(Cache):
       def __init__(
          self,
@@ -97,39 +108,47 @@ A custom cache implementations which stores and retrieves per-host certificates 
          key = self._stored_as(key)
          return self._cache[key]
 
+   ca = CertificateAuthority('my-ca.pem', cache=CustomCache())
+   creds = ca['example.com']
+
 
 Wildcard Certs
 ~~~~~~~~~~~~~~
-##TODO
 To reduce the number of certs generated, it is convenient to generate wildcard certs.
+For full functionality also install tld library
 
 .. code:: python
 
-   cert, key = ca.load_cert('example.com', wildcard=True)
+   creds = ca.load_creds('test.example.com', domain_cert=True)
 
 This will generate a cert for ``*.example.com``.
 
-To automatically generate a wildcard cert for parent domain, use:
+.. code:: python
+
+   creds = ca.load_creds('test.example.com', sans=["*.test.example.com"])
+
+This will also generate a cert for ``*.test.example.com`` and ``test.example.com``
 
 .. code:: python
 
-   cert, key = ca.load_cert('test.example.com', wildcard=True, wildcard_for_parent=True)
+   creds = ca.load_creds('test.example.com', domain_cert=True, sans=["*.test.example.com"])
 
-This will also generate a cert for ``*.example.com``
-
+This will also generate a cert for ``*.test.example.com``, ``test.example.com`` and ``*.example.com``
 
 Alternative FQDNs or IPs in SAN
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Sometimes, you want to add alternative FQDNs or IPs as Subject Alternative Names
-to your certificate. To do that, simply use the ``sans`` params of ``load_cert``:
+to your certificate. To do that, simply use the ``sans`` params:
 
 .. code:: python
 
-   cert, key = ca.load_cert('example.com', sans=['example.org','192.168.1.1'])
+   creds = ca.load_cert('example.com', sans=['example.org','192.168.1.1'])
 
 This will generate a cert for ``example.com`` with ``example.org`` and ``192.168.1.1`` in
 the SAN.
+
+Each san can be an ip as ``str|IPv4Address|IPv6Address`` a dns as ``str`` or ``x509.GeneralName``
 
 
 CLI Usage Examples
@@ -163,7 +182,7 @@ CLI Usage Examples
 
 To create a new root CA certificate:
 
-``certauth myrootca.pem --certname "My Test CA"``
+``certauth myrootca.pem --issuername "My Test CA"``
 
 To create a host certificate signed with CA certificate in directory ``certs_dir``:
 

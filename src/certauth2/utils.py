@@ -26,7 +26,3 @@ def get_wildcard_domain(host: str, strict: bool = True):
         return host
     else:
         return host_parts[1]
-
-from OpenSSL import SSL
-
-SSL.Context().add_extra_chain_cert()

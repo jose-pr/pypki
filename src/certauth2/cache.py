@@ -1,4 +1,3 @@
-# =================================================================
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from io import FileIO
@@ -13,7 +12,7 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
-class Cache(Generic[K, T, R]):
+class Cache(ABC, Generic[K, T, R]):
     def __contains__(self, key):
         try:
             self[key]

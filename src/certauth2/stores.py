@@ -95,7 +95,7 @@ def ondiskPathStore(
 ):
     dump, load, stored_as = _ondiskStoreFuncs(encoding, password, transform)
     return FileStorage[str, X509Credentials, T](
-        directory, load=load, dump=dump, stored_as=stored_as, transform=transform
+        directory, load=load, dump=dump, stored_as=stored_as
     )
 
 
