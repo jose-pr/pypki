@@ -187,7 +187,10 @@ def get_subj_alt_name(peer_cert: crypto.X509):
     return names
 
 
-class WrappedSocket(object):
+from ..interface import SSLSocket
+
+
+class PyOpenSSLSocket(SSLSocket):
     """API-compatibility wrapper for Python OpenSSL's Connection-class.
 
     Note: _makefile_refs, _drop() and _reuse() are needed for the garbage
@@ -329,10 +332,12 @@ class WrappedSocket(object):
 
 # makefile = backport_makefile
 
-WrappedSocket.makefile = backport_makefile
+PyOpenSSLSocket.makefile = backport_makefile
+
+from ..interface import SSLContext
 
 
-class PyOpenSSLContext(object):
+class PyOpenSSLContext(SSLContext):
     """
     I am a wrapper class for the PyOpenSSL ``Context`` object. I am responsible
     for translating the interface of the standard library ``SSLContext`` object
@@ -423,7 +428,7 @@ class PyOpenSSLContext(object):
                 raise SSLError("bad handshake: %r" % e)
             break
 
-        return WrappedSocket(cnx, sock)
+        return PyOpenSSLSocket(cnx, sock)
 
 
 def ensure_binary(s: str, encoding="utf-8", errors="strict"):

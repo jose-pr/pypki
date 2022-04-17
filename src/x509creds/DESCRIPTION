@@ -1,1 +1,1 @@
-Python x509 utilities to work load, dump a certificate, key and trust chain that can be used as credentials
+SSLContext and SSLSocket interfaces

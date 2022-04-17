@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from socket import socket
 
 
-class WrappedSocket(ABC):
+class SSLSocket(ABC):
     """API-compatibility interface for Python Connection-class.
 
     Note: _makefile_refs, _drop() and _reuse() are needed for the garbage
@@ -107,26 +107,6 @@ class SSLContext(ABC):
         do_handshake_on_connect=True,
         suppress_ragged_eofs=True,
         server_hostname: "str|None" = None,
-    ) -> WrappedSocket:
+    ) -> SSLSocket:
         ...
 
-
-class SSLContextProvider(ABC):
-    @abstractmethod
-    def sslcontext(protocol: "SSLMethod") -> SSLContext:
-        errs = []
-        try:
-            from ssl import SSLContext
-        except BaseException as e:
-            errs.append(e)
-            SSLContext = None
-        if SSLContext is None:
-            try:
-                from ._vendor.pyopenssl import PyOpenSSLContext as SSLContext
-            except BaseException as e:
-                errs.append(e)
-                pass
-        if SSLContext:
-            return SSLContext(protocol=protocol)
-        else:
-            raise Exception("Could not load a module that provides a SSLContext", errs)

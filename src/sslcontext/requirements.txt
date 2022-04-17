@@ -1,0 +1,2 @@
+idna; extra == 'idna'
+pyopenssl; extra == 'pyopenssl'
