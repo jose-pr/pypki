@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from functools import reduce
-from typing import NamedTuple
 
 from .utils import *
 from .utils import (
@@ -329,7 +328,7 @@ def load_creds(*stores: Encoded):
     cert = None
     chain = []
     for store in stores:
-        _cert, _key, _chain = load_encoded_store(store)
+        _cert, _key, _chain = X509EncodedStore(store).decode()
         if _key and key is None:
             key = _key
         if _cert:
@@ -338,7 +337,8 @@ def load_creds(*stores: Encoded):
             else:
                 chain.append(cert)
         chain.extend(_chain)
-
+    if cert is None:
+        raise ValueError("No certificate was found")
     return (
         X509Credentials(cert, key, _chain)
         if key

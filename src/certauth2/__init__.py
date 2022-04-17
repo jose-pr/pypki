@@ -1,5 +1,5 @@
 from ipaddress import IPv4Address, IPv6Address
-from os import PathLike as OsPathLike
+from os import PathLike
 from typing import Generic, Iterable, Mapping, overload
 from pathlib import Path
 from x509creds import (
@@ -13,7 +13,7 @@ from x509creds import (
     PublicKey,
     PrivateKey,
     HashAlgorithm,
-    PathLike,
+    ValidPath,
 )
 from datetime import datetime, timedelta
 
@@ -21,21 +21,13 @@ from .utils import into_ip, get_wildcard_domain
 from .cache import T, Cache
 from .stores import ondiskCredentialStore, onMemoryCredentialStore
 
-DEF_ENCODING = Encoding.PEM
-
 CredentialsStore = Cache[str, X509Credentials, T]
 
 
-# =================================================================
 class CertificateAuthority(X509Issuer, Generic[T]):
     """
     Utility class for signing individual certificate
-    with a root cert.
-
-    Static generate_ca_root() method for creating the root cert
-
-    All certs saved on filesystem. Individual certs are stored
-    in specified certs_dir and reused if previously created.
+    with a provided CA or auto created self-signed root cert.
     """
 
     credentials: X509Credentials
@@ -43,8 +35,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
 
     def __init__(
         self,
-        credentials: "X509Credentials|PathLike|tuple[PathLike, str|None, str|None]",
-        cache: "CredentialsStore[T]|int|PathLike|None" = None,
+        credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
+        cache: "CredentialsStore[T]|int|ValidPath|None" = None,
         cert_not_before: "timedelta|int|datetime" = None,
         cert_not_after: "timedelta|int|datetime" = None,
         hash: "HashAlgorithm|None" = None,
@@ -91,7 +83,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
                 )
 
         self.credentials = credentials
-        if isinstance(cache, (str, OsPathLike)):
+        if isinstance(cache, (str, PathLike)):
             self.cache = ondiskCredentialStore(cache)
         elif isinstance(cache, int):
             self.cache = onMemoryCredentialStore(cache)

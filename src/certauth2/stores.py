@@ -1,7 +1,6 @@
 from io import BytesIO, FileIO
-from os import PathLike
-from typing import Union, Iterator, overload
-from x509creds import X509Credentials, Encoding, PathLike
+from typing import Iterator, overload
+from x509creds import X509Credentials, Encoding, ValidPath
 import tarfile
 
 from x509creds.utils import Encoded
@@ -63,13 +62,13 @@ def _ondiskStoreFuncs(
 
 @overload
 def ondiskCredentialStore(
-    directory: PathLike, encoding: "Encoding|None" = None, password: str = None
+    directory: ValidPath, encoding: "Encoding|None" = None, password: str = None
 ) -> FileCache[str, X509Credentials, X509Credentials]:
     ...
 
 
 def ondiskCredentialStore(
-    directory: PathLike,
+    directory: ValidPath,
     encoding: "Encoding|None" = None,
     password: str = None,
     transform: Transform[X509Credentials, T] = None,
@@ -83,13 +82,13 @@ def ondiskCredentialStore(
 
 @overload
 def ondisPathStore(
-    directory: PathLike, encoding: "Encoding|None" = None, password: str = None
+    directory: ValidPath, encoding: "Encoding|None" = None, password: str = None
 ) -> FileStorage[str, X509Credentials, X509Credentials]:
     ...
 
 
 def ondiskPathStore(
-    directory: PathLike,
+    directory: ValidPath,
     encoding: "Encoding|None" = None,
     password: str = None,
     transform: Transform[X509Credentials, T] = None,

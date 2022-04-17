@@ -1,10 +1,20 @@
+from abc import ABC, abstractmethod, abstractproperty, abstractstaticmethod
+from io import BytesIO as _BytesIO
 import re as _re
 from datetime import datetime, timedelta
 from enum import IntEnum as _IntEnum
 from enum import IntFlag as _IntFlag
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Literal, NamedTuple, Tuple, overload, Union
-
+from typing import (
+    TYPE_CHECKING,
+    BinaryIO,
+    Iterable,
+    Literal,
+    NamedTuple,
+    Tuple,
+    overload,
+    Union,
+)
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
 from cryptography.hazmat.primitives.asymmetric.types import (
@@ -34,7 +44,7 @@ from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
 from cryptography.x509 import Certificate, CertificateBuilder
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from typing_extensions import TypeGuard as _TypeGuard
-from os import PathLike as _PathLike
+from os import PathLike
 
 if TYPE_CHECKING:
     from OpenSSL import crypto as _crypto
@@ -94,16 +104,20 @@ class Encoding(_IntEnum):
         return _ENCODING_SUFFIX_MAP[ext]
 
 
-PathLike = Union[str, _PathLike]
+ValidPath = Union[str, PathLike]
 PasswordLike = Union[bytes, str, None]
 
 ProtectedByteEncoded = Tuple[bytes, Encoding, PasswordLike]
 EncodedBytes = Union[Tuple[bytes, Encoding], ProtectedByteEncoded]
 ProtectedEncodedFile = Union[
-    Tuple[PathLike, Encoding, PasswordLike], Tuple[PathLike, PasswordLike]
+    Tuple[ValidPath, Encoding, PasswordLike], Tuple[ValidPath, PasswordLike]
 ]
-EncodedFile = Union[Tuple[PathLike, Encoding], PathLike, ProtectedEncodedFile]
+EncodedFile = Union[Tuple[ValidPath, Encoding], ValidPath, ProtectedEncodedFile]
 Encoded = Union[EncodedFile, EncodedBytes]
+
+
+def _is_encoded_file(encoded: Encoded) -> _TypeGuard[EncodedFile]:
+    return not isinstance(encoded, tuple) or not isinstance(encoded[0], bytes)
 
 
 def _getEncryption(password: PasswordLike) -> _Encryption:
@@ -121,7 +135,48 @@ def _as_bytes(val, encoding: str = "utf-8") -> bytes:
     return val.encode(encoding) if isinstance(val, str) else val
 
 
-class _ByteDecoder(NamedTuple):
+class X509EncodedStore(ABC):
+    def __new__(cls, encoded: Encoded):
+        if _is_encoded_file(encoded):
+            return _FileDecoder.new(encoded)
+        else:
+            return _ByteDecoder.new(encoded)
+
+    @abstractstaticmethod
+    def new(encoded: Encoded) -> "X509EncodedStore":
+        ...
+
+    @abstractproperty
+    def encoding(self) -> bytes:
+        ...
+
+    @abstractproperty
+    def encryption(self) -> PasswordLike:
+        pass
+
+    def raw_dump(self) -> "tuple[bytes, Encoding, PasswordLike]":
+        with self as (io, encoding, password):
+            return io.read(), encoding, password
+
+    @abstractmethod
+    def open(self) -> "tuple[BinaryIO, Encoding, PasswordLike]":
+        pass
+
+    @abstractmethod
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self.open()
+
+    def __exit__(self):
+        self.close()
+
+    def decode(self):
+        return load_store(*self.raw_dump())
+
+
+class __ByteDecoder(NamedTuple):
     data: bytes
     encoding: Encoding
     encryption: PasswordLike
@@ -135,8 +190,21 @@ class _ByteDecoder(NamedTuple):
             data, encoding, encryption = encoded
         return _ByteDecoder(data, encoding, encryption)
 
+    def raw_dump(self) -> "tuple[bytes, Encoding, PasswordLike]":
+        return self
 
-class _FileDecoder(NamedTuple):
+    def open(self):
+        return (_BytesIO(self.data), self.encoding, self.encryption)
+
+    def close(self):
+        pass
+
+
+class _ByteDecoder(__ByteDecoder, X509EncodedStore):
+    ...
+
+
+class __FileDecoder(NamedTuple):
     path: Path
     encoding: Encoding
     encryption: PasswordLike
@@ -166,8 +234,13 @@ class _FileDecoder(NamedTuple):
 
         return _FileDecoder(path, encoding, encryption)
 
-    def to_bytedecoder(self):
-        return _ByteDecoder(self.path.read_bytes(), self.encoding, self.encryption)
+    def open(self, mode: str = "rb"):
+        with self.path.open(mode) as io:
+            return (io, self.encoding, self.encryption)
+
+
+class _FileDecoder(__FileDecoder, X509EncodedStore):
+    ...
 
 
 _ENCODING_SUFFIX_MAP: "dict[str,Encoding]" = {}
@@ -296,19 +369,9 @@ def load_certs(
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
-
-def load_encoded_store(encoded: Encoded):
-    if not isinstance(encoded, tuple) or not isinstance(encoded[0], bytes):
-        store = _FileDecoder.new(encoded).to_bytedecoder()
-    else:
-        store = _ByteDecoder.new(encoded)
-
-    return load_store(*store)
-
-
 def load_store(
     data: bytes, encoding: Encoding, password: PasswordLike = None
-) -> "tuple[Certificate, PrivateKey|None, list[Certificate]]":
+) -> "tuple[Certificate|None, PrivateKey|None, list[Certificate]]":
     password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
