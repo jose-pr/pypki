@@ -21,6 +21,7 @@ You can install them with the following command:
 """
 from __future__ import absolute_import
 from enum import IntEnum
+from typing_extensions import TypeGuard
 
 import OpenSSL.SSL
 from OpenSSL import crypto
@@ -440,3 +441,9 @@ def ensure_binary(s: str, encoding="utf-8", errors="strict"):
 
 def _verify_callback(cnx, x509, err_no, err_depth, return_code):
     return err_no == 0
+
+def is_pyopenssl(ctx:object) -> TypeGuard[PyOpenSSLContext]:
+    if isinstance(ctx, SSLContext) and hasattr(ctx, "_ctx") and isinstance(ctx._ctx, OpenSSL.SSL.Context):
+        return True
+    else:
+        return False

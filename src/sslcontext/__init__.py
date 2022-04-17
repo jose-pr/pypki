@@ -7,7 +7,7 @@ try:
 except:
     pass
 try:
-    from _vendor.pyopenssl import PyOpenSSLContext
+    from _vendor.pyopenssl import PyOpenSSLContext, is_pyopenssl, PyOpenSSLSocket
 except:
     ...
 

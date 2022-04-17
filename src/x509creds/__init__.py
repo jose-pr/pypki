@@ -12,6 +12,8 @@ from .utils import (
     _X509Creds,
     _X509PubCreds,
 )
+import tempfile as _tmp
+import os as _os
 
 
 class X509PublicCredentials(_X509PubCreds):
@@ -85,19 +87,29 @@ class X509PublicCredentials(_X509PubCreds):
         else:
             return creds
 
+    def apply_to_sslcontext(self, sslcontext: "SSLContext"):
+
+        if is_pyopenssl(sslcontext):
+            crt, chain = self.to_pyopenssl()
+            for ca in [crt, *chain]:
+                sslcontext._ctx.add_extra_chain_cert(ca)
+            return
+
+        pem = self.dump(Encoding.PEM)
+        fd, path = _tmp.mkstemp()
+        try:
+            with _os.fdopen(fd, "wb") as tmp:
+                tmp.write(pem)
+            sslcontext.load_verify_locations(cafile=path)
+        finally:
+            _os.remove(path)
+
     if _crypto:
 
         def to_pyopenssl(self):
-            data = self.dump(Encoding.PEM)
-
-            certs: "list[_crypto.X509]" = []
-            for section, data in parse_pem(data):
-                if section == "CERTIFICATE":
-                    certs.append(_crypto.load_certificate(_crypto.FILETYPE_PEM, data))
-
             return (
-                certs[0],
-                certs[1:],
+                _crypto.X509.from_cryptography(self.cert),
+                [_crypto.X509.from_cryptography(ca) for ca in self.chain],
             )
 
         @staticmethod
@@ -261,23 +273,32 @@ class X509Credentials(_X509Creds, X509Issuer):
             hash_alg,
         )
 
+    def apply_to_sslcontext(self, sslcontext: "SSLContext"):
+        if is_pyopenssl(sslcontext):
+            crt, key, chain = self.to_pyopenssl()
+            for ca in chain:
+                sslcontext._ctx.add_extra_chain_cert(ca)
+            sslcontext._ctx.use_certificate(crt)
+            sslcontext._ctx.use_privatekey(key)
+            return
+
+        pem = self.dump(Encoding.PEM)
+        fd, path = _tmp.mkstemp()
+        try:
+            with _os.fdopen(fd, "wb") as tmp:
+                tmp.write(pem)
+            sslcontext.load_cert_chain(cafile=path)
+        finally:
+            _os.remove(path)
+
     if _crypto:
 
         def to_pyopenssl(self):
-            data = self.dump(Encoding.PEM)
-
-            key: "_crypto.PKey" = None
-            certs: "list[_crypto.X509]" = []
-            for section, data in parse_pem(data):
-                if section == "CERTIFICATE":
-                    certs.append(_crypto.load_certificate(_crypto.FILETYPE_PEM, data))
-                elif "PRIVATE KEY" in section and key is None:
-                    key = _crypto.load_privatekey(_crypto.FILETYPE_PEM, data)
-
+            key = dump_key(self.key, Encoding.PEM)
             return (
-                certs[0],
-                key,
-                certs[1:],
+                _crypto.X509.from_cryptography(self.cert),
+                _crypto.load_privatekey(_crypto.FILETYPE_PEM, key),
+                [_crypto.X509.from_cryptography(ca) for ca in self.chain],
             )
 
         @staticmethod

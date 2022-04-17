@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod, abstractproperty, abstractstaticmethod
+from inspect import isfunction
 from io import BytesIO as _BytesIO
 import re as _re
 from datetime import datetime, timedelta
@@ -6,9 +7,9 @@ from enum import IntEnum as _IntEnum
 from enum import IntFlag as _IntFlag
 from pathlib import Path
 from typing import (
-    IO,
     TYPE_CHECKING,
     BinaryIO,
+    Callable,
     Iterable,
     Iterator,
     Literal,
@@ -51,11 +52,23 @@ import tarfile as _tar
 
 if TYPE_CHECKING:
     from OpenSSL import crypto as _crypto
+    from sslcontext import SSLContext, is_pyopenssl
 else:
     try:
-        from OpenSSL import crypto as _crypto
+        from OpenSSL import crypto as _crypto, SSL as _SSL
+        try:
+            from sslcontext import is_pyopenssl
+        except:
+            def is_pyopenssl(ctx):
+                if hasattr(ctx, "_ctx") and isinstance(ctx._ctx, _SSL.Context):
+                    return True
+                else:
+                    return False
+
     except ImportError:
         _crypto = None
+        def is_pyopenssl(ctx):
+            return False
 
 ExtensionLike = Union[
     x509.Extension,
@@ -108,7 +121,7 @@ class Encoding(_IntEnum):
 
 
 ValidPath = Union[str, PathLike]
-PasswordLike = Union[bytes, str, None]
+PasswordLike = Union[bytes, str, None, Callable[[], Union[str, bytes]]]
 
 ProtectedByteEncoded = Tuple[bytes, Encoding, PasswordLike]
 EncodedBytes = Union[Tuple[bytes, Encoding], ProtectedByteEncoded]
@@ -124,14 +137,19 @@ def _is_encoded_file(encoded: Encoded) -> _TypeGuard[EncodedFile]:
 
 
 def _getEncryption(password: PasswordLike) -> _Encryption:
-    if isinstance(password, _Encryption):
-        return password
-    elif isinstance(password, str):
-        return _TextEncryption(password.encode())
-    elif password is None:
+    password = _getPassword(password)
+    if password is None:
         return _NoEncryption()
     else:
         return _TextEncryption(password)
+
+
+def _getPassword(password: PasswordLike) -> "bytes|None":
+    if password is None:
+        return None
+    elif isfunction(password):
+        password = password()
+    return _as_bytes(password) if password is not None else None
 
 
 def _as_bytes(val, encoding: str = "utf-8") -> bytes:
@@ -308,7 +326,7 @@ def load_der_archive(file: "BinaryIO|_tar.TarFile|bytes", password: bytes = None
 
 
 def load_cert(data: bytes, encoding: Encoding, password: PasswordLike = None):
-    password = _as_bytes(password)
+    password = _getPassword(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
         return store.cert.certificate
@@ -321,7 +339,7 @@ def load_cert(data: bytes, encoding: Encoding, password: PasswordLike = None):
 
 
 def load_key(data: bytes, encoding: Encoding, password: PasswordLike = None):
-    password = _as_bytes(password)
+    password = _getPassword(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
         if store.key is None:
@@ -397,10 +415,18 @@ def iter_pem(pem: BinaryIO) -> Iterator[Tuple[str, bytes]]:
                 sectionName = match[2]
 
 
+def decode_pem(pem: "BinaryIO|bytes", password: PasswordLike = None):
+    for section, data in iter_pem(_BytesIO(pem) if isinstance(pem, bytes) else pem):
+        if section == "CERTIFICATE":
+            yield x509.load_pem_x509_certificate(data)
+        elif "PRIVATE KEY" in section:
+            yield _load_pem_private_key(data, password)
+
+
 def load_certs(
     io: "bytes|BinaryIO", encoding: Encoding, password: PasswordLike = None
 ) -> "list[Certificate]":
-    password = _as_bytes(password)
+    password = _getPassword(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(
             io.read() if not isinstance(io, bytes) else io, password
@@ -425,7 +451,7 @@ def load_certs(
 def load_key_and_certificates(
     io: "bytes|BinaryIO", encoding: Encoding, password: PasswordLike = None
 ) -> "tuple[Certificate|None, PrivateKey|None, list[Certificate]]":
-    password = _as_bytes(password)
+    password = _getPassword(password)
     if encoding is Encoding.PKCS12:
         key, cert, chain = _pkcs12.load_key_and_certificates(
             io.read() if not isinstance(io, bytes) else io, password
@@ -449,7 +475,7 @@ def load_key_and_certificates(
 def load_all(
     io: "BinaryIO|bytes", encoding: Encoding, password: PasswordLike = None
 ) -> "Iterator[PrivateKey|Certificate]":
-    password = _as_bytes(password)
+    password = _getPassword(password)
     if encoding is Encoding.PKCS12:
         key, cert, chain = _pkcs12.load_key_and_certificates(
             io.read() if not isinstance(io, bytes) else io, password
@@ -458,11 +484,7 @@ def load_all(
         yield key
         yield from chain
     elif encoding is Encoding.PEM:
-        for section, data in iter_pem(io):
-            if section == "CERTIFICATE":
-                yield x509.load_pem_x509_certificate(data)
-            elif "PRIVATE KEY" in section and key is None:
-                yield _load_pem_private_key(data, password)
+        yield from decode_pem(io, password)
     elif encoding is Encoding.DER:
         yield load_der(io.read() if not isinstance(io, bytes) else io, password)
     else:
