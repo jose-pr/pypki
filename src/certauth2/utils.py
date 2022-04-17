@@ -1,31 +1,13 @@
-from datetime import datetime, timedelta
-from enum import IntFlag
-import ipaddress
-from cryptography import x509
-from cryptography.hazmat.primitives.asymmetric import rsa
-from x509creds import PrivateKey, Certificate
-
-DEF_KEY_SIZE = 2048
-CERT_MAX_AGE = timedelta(seconds=397 * 24 * 60 * 60)
-
-
-def into_ip(ip: str):
-    try:
-        return ipaddress.ip_address(ip)
-    except ValueError:
-        return None
-
-
-def is_ip(ip: str):
-    return into_ip(ip) is not None
-
-   
 try:
     import tld as _tld
 
 except ImportError:
     _tld = None
 
+from x509creds import into_ip
+
+def is_ip(ip:str):
+    return into_ip(ip) is not None
 
 def get_wildcard_domain(host: str, strict: bool = True):
     host_parts = host.split(".", 1)

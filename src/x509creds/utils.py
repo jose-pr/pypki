@@ -369,6 +369,7 @@ def load_certs(
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
+
 def load_store(
     data: bytes, encoding: Encoding, password: PasswordLike = None
 ) -> "tuple[Certificate|None, PrivateKey|None, list[Certificate]]":
@@ -412,6 +413,31 @@ def parse_extension(ext_like: ExtensionLike) -> x509.Extension:
         return x509.Extension(oid=ext_like[0].oid, value=ext_like, critical=ext_like[1])
     else:
         return x509.Extension(oid=ext_like[0], value=ext_like[1], critical=ext_like[2])
+
+
+from ipaddress import ip_address as _ip, IPv4Address as ipv4, IPv6Address as ipv6
+
+IPAddress = Tuple[ipv4, ipv6]
+
+
+def into_ip(ip: str):
+    try:
+        return _ip(ip)
+    except ValueError:
+        return None
+
+
+def parse_sans(sans: "Iterable[str|IPAddress|x509.GeneralName]"):
+    _sans: "set[x509.GeneralName]" = set()
+    for san in sans:
+        if isinstance(san, x509.GeneralName):
+            _sans.add(san)
+            continue
+        ip = into_ip(san)
+        if ip:
+            _sans.add(x509.IPAddress(ip))
+        _sans.add(x509.DNSName(san))
+    return _sans
 
 
 @overload

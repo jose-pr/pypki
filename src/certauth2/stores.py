@@ -54,7 +54,7 @@ def _ondiskStoreFuncs(
     def stored_as(host: str):
         if encoding is Encoding.DER:
             base = host.replace(":", "-")
-            return [base + ".crt.der", base + ".key.der", base + ".trust_chain.der.tar"]
+            return [base + ".crt.der", base + ".key.der", base + ".chain.der.tar"]
         return [host.replace(":", "-") + _suffix]
 
     return dump, load, stored_as
@@ -81,7 +81,7 @@ def ondiskCredentialStore(
 
 
 @overload
-def ondisPathStore(
+def ondiskPathStore(
     directory: ValidPath, encoding: "Encoding|None" = None, password: str = None
 ) -> FileStorage[str, X509Credentials, X509Credentials]:
     ...

@@ -1,4 +1,3 @@
-from ipaddress import IPv4Address, IPv6Address
 from os import PathLike
 from typing import Generic, Iterable, Mapping, overload
 from pathlib import Path
@@ -14,10 +13,13 @@ from x509creds import (
     PrivateKey,
     HashAlgorithm,
     ValidPath,
+    IPAddress,
 )
 from datetime import datetime, timedelta
 
-from .utils import into_ip, get_wildcard_domain
+from x509creds.utils import parse_sans
+
+from .utils import is_ip, get_wildcard_domain
 from .cache import T, Cache
 from .stores import ondiskCredentialStore, onMemoryCredentialStore
 
@@ -97,21 +99,21 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         host: str,
         overwrite: bool = False,
         domain_cert: bool = None,
-        sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
+        sans: "Iterable[str|IPAddress]|None" = None,
         **builder_kargs
     ):
 
-        sans = sans or []
         creds = None
         domain_cert = self.domain_cert if domain_cert is None else domain_cert
 
-        if domain_cert and not host.startswith("*"):
+        if domain_cert and not host.startswith("*") and not is_ip(host):
             host = "*." + get_wildcard_domain(host, self.verify_tld)
 
         if not overwrite:
             creds = self.cache.get(host)
 
         if not creds:
+            sans = [host, *(sans or [])]
             self._modified = True
             creds = self.generate_host_creds(host, sans=sans, **builder_kargs)
             self.cache[host] = creds
@@ -182,30 +184,18 @@ class CertificateAuthority(X509Issuer, Generic[T]):
     def generate_host_creds(
         self,
         host: str,
-        sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
+        sans: "Iterable[str|IPAddress]|None" = None,
         key: "PublicKey" = None,
         **builder_kargs
     ) -> "X509PublicCredentials":
         ...
 
     def generate_host_creds(
-        self,
-        host: str,
-        sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
-        **builder_kargs
+        self, host: str, sans: "Iterable[str|IPAddress]|None" = None, **builder_kargs
     ) -> X509Credentials:
-        _done = []
-        _sans = []
-        for san in [host, *sans]:
-            ip = into_ip(san)
-            san = str(san)
-            if san not in _done:
-                if ip:
-                    _sans.append(x509.IPAddress(ip))
-                _sans.append(x509.DNSName(san))
-                _done.append(san)
+
         extensions: list = builder_kargs.setdefault("extensions", [])
-        extensions.append(x509.SubjectAlternativeName(_sans))
+        extensions.append(x509.SubjectAlternativeName(parse_sans(sans or [])))
         builder_kargs["purpose"] = CertPurpose.SERVER | CertPurpose.CLIENT
         return self.generate(
             host,
