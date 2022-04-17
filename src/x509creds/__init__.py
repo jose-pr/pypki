@@ -287,7 +287,7 @@ class X509Credentials(_X509Creds, X509Issuer):
         try:
             with _os.fdopen(fd, "wb") as tmp:
                 tmp.write(pem)
-            sslcontext.load_cert_chain(cafile=path)
+            sslcontext.load_cert_chain(certfile=path)
         finally:
             _os.remove(path)
 
