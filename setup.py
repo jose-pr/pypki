@@ -1,20 +1,29 @@
+from ast import arg
 from pathlib import Path
 import shutil, sys
 from setuptools import setup as _setup, find_packages
 
 
 root = Path(__file__).parent
-PKG = sys.argv.pop(1)
-src = root / "src" / PKG
+PKG = sys.argv.pop(1).replace("-", "_")
+PKG_NAME = PKG.replace("_", "-")
 
-(root / "dist").mkdir(exist_ok=True)
-if sys.argv[1] == "clean_dist":
-    for path in (root / "dist").iterdir():
-        path.unlink()
-    exit()
+src = root / "src" / PKG
+dist = root / "dist" / PKG
+dist.mkdir(exist_ok=True, parents=True)
+
+
+def clean_dist():
+    if PKG == "_":
+        for path in (root / "dist").iterdir():
+            shutil.rmtree(path)
+    else:
+        for path in dist.iterdir():
+            path.unlink()
 
 
 def clean():
+
     for path in (root / "src").iterdir():
         if path.suffix == ".egg-info":
             shutil.rmtree(path)
@@ -24,24 +33,33 @@ def clean():
     shutil.rmtree(root / "build", ignore_errors=True)
 
 
-pkgs = find_packages(str(src))
-import mimetypes
+if sys.argv[1] == "clean-dist":
+    clean_dist()
+    exit()
 
+
+pkgs = find_packages(str(src))
 readme_file = next((f for f in src.iterdir() if f.stem == "README"), None)
 if readme_file:
     readme = readme_file.read_text()
-    readme_type = mimetypes.guess_type(readme_file)[0]
-    if readme_type is None:
-        readme_type = f"text/x-{readme_file.suffix[1:]}"
+
+    if readme_file.suffix == "rst":
+        readme_type = f"text/x-rst"
+    elif readme_file.suffix == "md":
+        readme_type = "text/markdown"
+    else:
+        readme_type = "text/plain"
 else:
     readme = None
     readme_type = None
+print(readme_type)
 
 
-def setup(*args, **kwargs):
-    clean()
+def setup(**kwargs):
     _setup(
-        *args,
+        name=PKG.replace("_", "-"),
+        version=(src / "VERSION").read_text(),
+        description=(src / "DESCRIPTION").read_text(),
         long_description=readme,
         long_description_content_type=readme_type
         if readme_type != "text/x-rst"
@@ -54,11 +72,18 @@ def setup(*args, **kwargs):
         install_requires=(src / "requirements.txt").read_text().splitlines(),
         **kwargs,
     )
-    clean()
 
 
-setup(
-    name=PKG.replace("_", "-"),
-    version=(src / "VERSION").read_text(),
-    description=(src / "DESCRIPTION").read_text(),
-)
+clean()
+if sys.argv[1] == "dist-build":
+    sys.argv.append("--dist-dir")
+    sys.argv.append(f"dist/{PKG}")
+    clean_dist()
+    sys.argv[1] = "bdist_wheel"
+    setup()
+    sys.argv[1] = "sdist"
+    setup()
+else:
+    setup()
+
+clean()

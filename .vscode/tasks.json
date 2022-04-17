@@ -6,13 +6,13 @@
         {
             "label": "Build",
             "type": "shell",
-            "command": "python setup.py ${input:pkg} clean_dist && python setup.py ${input:pkg} bdist_wheel && python setup.py ${input:pkg} sdist",
+            "command": "python setup.py ${input:pkg} dist-build",
             "problemMatcher": []
         },
         {
             "label": "Install",
             "type": "shell",
-            "command": "python -m pip install --user --force-reinstall --no-deps (Resolve-Path ${workspaceFolder}/dist/*.whl)",
+            "command": "python -m pip install --user --force-reinstall --no-deps (Resolve-Path ${workspaceFolder}/dist/${input:pkg}/*.whl)",
             "problemMatcher": []
         },
         {
@@ -24,7 +24,13 @@
         {
             "label": "Publish",
             "type": "shell",
-            "command": "python -m  twine upload -r pypi ./dist/*",
+            "command": "python -m  twine upload -r pypi ./dist/${input:pkg}/*",
+            "problemMatcher":[]
+        },
+        {
+            "label": "Publish All",
+            "type": "shell",
+            "command": "python -m  twine upload -r pypi ./dist/*/*",
             "problemMatcher":[]
         }
     ],
@@ -33,7 +39,14 @@
             "id": "pkg",
             "description": "Package Name:",
             "default": "openssl_engine",
-            "type": "promptString"
+            "type": "pickString",
+            "options": [
+                "openssl-engine",
+                "openssl-engine-capi",
+                "certauth2",
+                "x509creds",
+                "sslcontext"
+              ]
         },
     ]
 }
