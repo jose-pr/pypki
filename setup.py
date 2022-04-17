@@ -43,9 +43,9 @@ readme_file = next((f for f in src.iterdir() if f.stem == "README"), None)
 if readme_file:
     readme = readme_file.read_text()
 
-    if readme_file.suffix == "rst":
+    if readme_file.suffix == ".rst":
         readme_type = f"text/x-rst"
-    elif readme_file.suffix == "md":
+    elif readme_file.suffix == ".md":
         readme_type = "text/markdown"
     else:
         readme_type = "text/plain"
