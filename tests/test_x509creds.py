@@ -1,9 +1,11 @@
-from x509creds import load_store, get_bytes_and_encoding
+from x509creds import X509EncodedStore
 
 
 
-data, encoding = get_bytes_and_encoding("./.private/store.pem")
+store = X509EncodedStore("./.private/store.pem")
+store2 = X509EncodedStore("./.private/my-ca.pem")
 
-store = load_store(data, encoding)
+data  = store.load_key_and_certificates()
+data2  = store2.load_key_and_certificates()
 
 pass

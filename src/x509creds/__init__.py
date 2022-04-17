@@ -328,7 +328,7 @@ def load_creds(*stores: Encoded):
     cert = None
     chain = []
     for store in stores:
-        _cert, _key, _chain = X509EncodedStore(store).decode()
+        _cert, _key, _chain = X509EncodedStore(store).load_key_and_certificates()
         if _key and key is None:
             key = _key
         if _cert:

@@ -6,9 +6,11 @@ from enum import IntEnum as _IntEnum
 from enum import IntFlag as _IntFlag
 from pathlib import Path
 from typing import (
+    IO,
     TYPE_CHECKING,
     BinaryIO,
     Iterable,
+    Iterator,
     Literal,
     NamedTuple,
     Tuple,
@@ -45,6 +47,7 @@ from cryptography.x509 import Certificate, CertificateBuilder
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from typing_extensions import TypeGuard as _TypeGuard
 from os import PathLike
+import tarfile as _tar
 
 if TYPE_CHECKING:
     from OpenSSL import crypto as _crypto
@@ -172,8 +175,13 @@ class X509EncodedStore(ABC):
     def __exit__(self, *args):
         self.close()
 
-    def decode(self):
-        return load_store(*self.raw_dump())
+    def iter_decode(self):
+        with self as (io, encoding, password):
+            return load_all(io, encoding, password)
+
+    def load_key_and_certificates(self):
+        with self as (io, encoding, password):
+            return load_key_and_certificates(io, encoding, password)
 
 
 class __ByteDecoder(NamedTuple):
@@ -231,13 +239,13 @@ class __FileDecoder(NamedTuple):
             encoding = Encoding.from_suffix(path.suffix)
         elif isinstance(encoding, str):
             encoding = Encoding[encoding]
-    
+
         return _FileDecoder(path, encoding, encryption)
 
     def open(self, mode: str = "rb"):
         self._io = self.path.open(mode)
         return (self._io, self.encoding, self.encryption)
-    
+
     def close(self):
         return self._io.close()
 
@@ -261,6 +269,42 @@ class _X509Creds(NamedTuple):
 class _X509PubCreds(NamedTuple):
     cert: Certificate
     chain: "list[Certificate]"
+
+
+def load_der(data: bytes, password: bytes = None):
+    try:
+        return x509.load_der_x509_certificate(data)
+    except ValueError:
+        return _load_der_private_key(data, password)
+
+
+def dump_der_archive(file: BinaryIO, store: "Iterable[Certificate|PrivateKey]"):
+    with _tar.open(fileobj=file, mode="w") as bundle:
+        for i, cert_or_key in enumerate(store):
+            if isinstance(cert_or_key, Certificate):
+                data = dump_cert(cert_or_key, Encoding.DER)
+                suffix = "crt"
+            else:
+                data = dump_key(cert_or_key, Encoding.DER)
+                suffix = "key"
+            info = _tar.TarInfo(f"{i}.{suffix}.der")
+            info.size = len(data)
+            bundle.addfile(info, _BytesIO(data))
+
+
+def load_der_archive(file: "BinaryIO|_tar.TarFile|bytes", password: bytes = None):
+    def _load(file: _tar.TarFile):
+        for member in file.getmembers():
+            if member.name.endswith(".der"):
+                yield load_der(file.extractfile(member).read(), password)
+
+    if isinstance(file, _tar.TarFile):
+        yield from _load(file)
+    else:
+        with _tar.open(
+            fileobj=file if isinstance(file, bytes) else file, mode="r"
+        ) as file:
+            yield from _load(file)
 
 
 def load_cert(data: bytes, encoding: Encoding, password: PasswordLike = None):
@@ -329,71 +373,98 @@ def dump_key(key: PrivateKey, encoding: Encoding, password: PasswordLike = None)
 _PEM_SECTION = _re.compile(rb"-----([^- ]+) ([^-]+)-----")
 
 
-def parse_pem(pem: bytes):
-    result: "list[tuple[str, bytes]]" = []
+def iter_pem(pem: BinaryIO) -> Iterator[Tuple[str, bytes]]:
     sectionName = None
     sectionData = bytes()
-    for line in pem.splitlines():
+    while True:
+        line = pem.readline()
+        if not line:
+            break
         line = line.strip()
         match = _PEM_SECTION.match(line)
+        sectionData += b"\n" + line
         if match:
-            sectionData += b"\n" + line
             if sectionName is not None:
                 expecting = b"-----END " + sectionName + b"-----"
                 if expecting != match[0]:
                     raise ValueError(f"Expecting: {expecting} Found:{match[0]}")
-                result.append((sectionName.decode(), sectionData))
+                yield sectionName.decode(), sectionData
                 sectionName = None
                 sectionData = bytes()
             else:
                 if match[1] != b"BEGIN":
                     raise ValueError(f"Expecting: BEGIN Found:{match[0]}")
                 sectionName = match[2]
-        elif sectionName:
-            sectionData += b"\n" + line
-    return result
 
 
 def load_certs(
-    data: bytes, encoding: Encoding, password: PasswordLike = None
+    io: "bytes|BinaryIO", encoding: Encoding, password: PasswordLike = None
 ) -> "list[Certificate]":
     password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
-        store = _pkcs12.load_pkcs12(data, password)
+        store = _pkcs12.load_pkcs12(
+            io.read() if not isinstance(io, bytes) else io, password
+        )
         return [store.cert.certificate] + store.additional_certs
     elif encoding is Encoding.PEM:
         certs = []
-        for section, data in parse_pem(data):
+        for section, data in iter_pem(io):
             if section == "CERTIFICATE":
                 certs.append(x509.load_pem_x509_certificate(data))
         return certs
     elif encoding is Encoding.DER:
-        return [x509.load_der_x509_certificate(data)]
+        return [
+            x509.load_der_x509_certificate(
+                io.read() if not isinstance(io, bytes) else io
+            )
+        ]
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
 
-def load_store(
-    data: bytes, encoding: Encoding, password: PasswordLike = None
+def load_key_and_certificates(
+    io: "bytes|BinaryIO", encoding: Encoding, password: PasswordLike = None
 ) -> "tuple[Certificate|None, PrivateKey|None, list[Certificate]]":
     password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
-        store = _pkcs12.load_pkcs12(data, password)
-        return store.cert.certificate, store.key, store.additional_certs
+        key, cert, chain = _pkcs12.load_key_and_certificates(
+            io.read() if not isinstance(io, bytes) else io, password
+        )
+        return cert, key, chain
     elif encoding is Encoding.PEM:
         key = None
         certs = []
-        for section, data in parse_pem(data):
+        for section, data in iter_pem(io):
             if section == "CERTIFICATE":
                 certs.append(x509.load_pem_x509_certificate(data))
             elif "PRIVATE KEY" in section and key is None:
                 key = _load_pem_private_key(data, password)
         return certs[0], key, certs[1:]
     elif encoding is Encoding.DER:
-        try:
-            return x509.load_der_x509_certificate(data), None, []
-        except ValueError:
-            return None, _load_der_private_key(data, password), []
+        return load_der(io.read() if not isinstance(io, bytes) else io, password)
+    else:
+        raise ValueError(f"Invalid encoding {encoding}")
+
+
+def load_all(
+    io: "BinaryIO|bytes", encoding: Encoding, password: PasswordLike = None
+) -> "Iterator[PrivateKey|Certificate]":
+    password = _as_bytes(password)
+    if encoding is Encoding.PKCS12:
+        key, cert, chain = _pkcs12.load_key_and_certificates(
+            io.read() if not isinstance(io, bytes) else io, password
+        )
+        yield cert
+        yield key
+        yield from chain
+    elif encoding is Encoding.PEM:
+        for section, data in iter_pem(io):
+            if section == "CERTIFICATE":
+                yield x509.load_pem_x509_certificate(data)
+            elif "PRIVATE KEY" in section and key is None:
+                yield _load_pem_private_key(data, password)
+    elif encoding is Encoding.DER:
+        yield load_der(io.read() if not isinstance(io, bytes) else io, password)
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 

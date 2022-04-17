@@ -1,9 +1,15 @@
-from io import BytesIO, FileIO
+from io import FileIO
 from typing import Iterator, overload
-from x509creds import X509Credentials, Encoding, ValidPath
-import tarfile
-
-from x509creds.utils import Encoded
+from x509creds import (
+    X509Credentials,
+    Encoding,
+    ValidPath,
+    load_der_archive,
+    dump_der_archive,
+    dump_cert,
+    dump_key,
+)
+from x509creds.utils import load_der
 
 
 from .cache import FileCache, FileStorage, LRUCache, Transform, T
@@ -20,33 +26,18 @@ def _ondiskStoreFuncs(
 
     def dump(iterio: Iterator[FileIO], creds: X509Credentials):
         if encoding is Encoding.DER:
-            cert, key, chain = creds.dump(encoding, password=password)
-            next(iterio).write(cert)
-            next(iterio).write(key)
-            with tarfile.open(fileobj=next(iterio), mode="w") as bundle:
-                for i, ca in enumerate(chain):
-                    ca_io = BytesIO(ca)
-                    ca_info = tarfile.TarInfo(f"{i}.crt.der")
-                    ca_info.size = len(ca)
-                    bundle.addfile(ca_info, ca_io)
+            next(iterio).write(dump_cert(creds.cert, encoding))
+            next(iterio).write(dump_key(creds.key, encoding, password))
+            dump_der_archive(next(iterio), creds.chain)
         else:
             next(iterio).write(creds.dump(encoding, password=password))
 
     def load(iterio: Iterator[FileIO]) -> T:
         if encoding is Encoding.DER:
-            cert = next(iterio).read()
-            key = next(iterio).read()
-            chain: "list[Encoded]" = []
-            with tarfile.open(fileobj=next(iterio), mode="r") as bundle:
-                for member in bundle.getmembers():
-                    if member.name.endswith(".crt.der"):
-                        chain.append(
-                            (bundle.extractfile(member).read(), encoding, password)
-                        )
-
-            creds = X509Credentials.load(
-                (cert, encoding, password), (key, encoding, password), *chain
-            )
+            cert = load_der(next(iterio).read())
+            key = load_der(next(iterio).read(), password)
+            chain = list(load_der_archive(next(iterio), password))
+            creds = X509Credentials(cert, key, chain)
         else:
             creds = X509Credentials.load((next(iterio).read(), encoding, password))
         return transform(creds)
