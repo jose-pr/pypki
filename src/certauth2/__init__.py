@@ -1,5 +1,5 @@
 from ipaddress import IPv4Address, IPv6Address
-from os import PathLike
+from os import PathLike as OsPathLike
 from typing import Generic, Iterable, Mapping, overload
 from pathlib import Path
 from x509creds import (
@@ -13,12 +13,13 @@ from x509creds import (
     PublicKey,
     PrivateKey,
     HashAlgorithm,
+    PathLike,
 )
 from datetime import datetime, timedelta
 
 from .utils import into_ip, get_wildcard_domain
 from .cache import T, Cache
-from .stores import ondiskCredentialStore, onMemoryCredentialStore, _Path
+from .stores import ondiskCredentialStore, onMemoryCredentialStore
 
 DEF_ENCODING = Encoding.PEM
 
@@ -42,8 +43,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
 
     def __init__(
         self,
-        credentials: "X509Credentials|_Path|tuple[_Path, str|None, str|None]",
-        cache: "CredentialsStore[T]|int|_Path|None" = None,
+        credentials: "X509Credentials|PathLike|tuple[PathLike, str|None, str|None]",
+        cache: "CredentialsStore[T]|int|PathLike|None" = None,
         cert_not_before: "timedelta|int|datetime" = None,
         cert_not_after: "timedelta|int|datetime" = None,
         hash: "HashAlgorithm|None" = None,
@@ -66,9 +67,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
             encoding = Encoding.from_suffix(path.suffix)
 
             if path.exists():
-                credentials = X509Credentials.load(
-                    cert=(path.read_bytes(), encoding), password=password
-                )
+                credentials = X509Credentials.load((path, encoding, password))
             else:
                 credentials = X509Credentials.create(
                     name,
@@ -92,7 +91,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
                 )
 
         self.credentials = credentials
-        if isinstance(cache, (str, PathLike)):
+        if isinstance(cache, (str, OsPathLike)):
             self.cache = ondiskCredentialStore(cache)
         elif isinstance(cache, int):
             self.cache = onMemoryCredentialStore(cache)

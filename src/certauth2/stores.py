@@ -1,13 +1,13 @@
 from io import BytesIO, FileIO
 from os import PathLike
 from typing import Union, Iterator, overload
-from x509creds import X509Credentials, Encoding
+from x509creds import X509Credentials, Encoding, PathLike
 import tarfile
+
+from x509creds.utils import Encoded
 
 
 from .cache import FileCache, FileStorage, LRUCache, Transform, T
-
-_Path = Union[str, PathLike]
 
 
 def _ondiskStoreFuncs(
@@ -37,19 +37,19 @@ def _ondiskStoreFuncs(
         if encoding is Encoding.DER:
             cert = next(iterio).read()
             key = next(iterio).read()
-            chain = []
+            chain: "list[Encoded]" = []
             with tarfile.open(fileobj=next(iterio), mode="r") as bundle:
                 for member in bundle.getmembers():
                     if member.name.endswith(".crt.der"):
-                        chain.append((bundle.extractfile(member).read(), encoding))
+                        chain.append(
+                            (bundle.extractfile(member).read(), encoding, password)
+                        )
 
             creds = X509Credentials.load(
-                (cert, encoding), (key, encoding), chain, password=password
+                (cert, encoding, password), (key, encoding, password), *chain
             )
         else:
-            creds = X509Credentials.load(
-                (next(iterio).read(), encoding), password=password
-            )
+            creds = X509Credentials.load((next(iterio).read(), encoding, password))
         return transform(creds)
 
     def stored_as(host: str):
@@ -63,13 +63,13 @@ def _ondiskStoreFuncs(
 
 @overload
 def ondiskCredentialStore(
-    directory: _Path, encoding: "Encoding|None" = None, password: str = None
+    directory: PathLike, encoding: "Encoding|None" = None, password: str = None
 ) -> FileCache[str, X509Credentials, X509Credentials]:
     ...
 
 
 def ondiskCredentialStore(
-    directory: _Path,
+    directory: PathLike,
     encoding: "Encoding|None" = None,
     password: str = None,
     transform: Transform[X509Credentials, T] = None,
@@ -83,13 +83,13 @@ def ondiskCredentialStore(
 
 @overload
 def ondisPathStore(
-    directory: _Path, encoding: "Encoding|None" = None, password: str = None
+    directory: PathLike, encoding: "Encoding|None" = None, password: str = None
 ) -> FileStorage[str, X509Credentials, X509Credentials]:
     ...
 
 
 def ondiskPathStore(
-    directory: _Path,
+    directory: PathLike,
     encoding: "Encoding|None" = None,
     password: str = None,
     transform: Transform[X509Credentials, T] = None,

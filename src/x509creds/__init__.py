@@ -49,12 +49,8 @@ class X509PublicCredentials(_X509PubCreds):
             raise ValueError(f"Invalid encoding {encoding}")
 
     @staticmethod
-    def load(
-        cert: Encoded,
-        chain: "list[Encoded]" = None,
-        password: str = None,
-    ):
-        self = load_creds(cert, None, chain, password)
+    def load(*stores: "Encoded"):
+        self = load_creds(*stores)
         if isinstance(self, X509Credentials):
             return self.public
         else:
@@ -219,13 +215,8 @@ class X509Credentials(_X509Creds, X509Issuer):
             raise ValueError(f"Invalid encoding {encoding}")
 
     @staticmethod
-    def load(
-        cert: Encoded,
-        key: Encoded = None,
-        chain: "list[Encoded]" = None,
-        password: str = None,
-    ):
-        self = load_creds(cert, key, chain, password)
+    def load(*stores: Encoded):
+        self = load_creds(*stores)
         if isinstance(self, X509Credentials):
             return self
         else:
@@ -333,21 +324,20 @@ if _crypto:
         )
 
 
-def load_creds(
-    cert: Encoded,
-    key: Encoded = None,
-    chain: "list[Encoded]" = None,
-    password: str = None,
-):
-    cert, _key, _chain = load_store(*cert, password)
-    if key is None:
-        key = _key
-    else:
-        key = load_key(*key, password)
-
-    if chain:
-        for data, encoding in chain:
-            _chain += load_certs(data, encoding, password)
+def load_creds(*stores: Encoded):
+    key = None
+    cert = None
+    chain = []
+    for store in stores:
+        _cert, _key, _chain = load_encoded_store(store)
+        if _key and key is None:
+            key = _key
+        if _cert:
+            if cert is None:
+                cert = _cert
+            else:
+                chain.append(cert)
+        chain.extend(_chain)
 
     return (
         X509Credentials(cert, key, _chain)

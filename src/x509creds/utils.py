@@ -18,7 +18,10 @@ from cryptography.hazmat.primitives.hashes import HashAlgorithm
 from cryptography.hazmat.primitives.serialization import (
     BestAvailableEncryption as _TextEncryption,
 )
-from cryptography.hazmat.primitives.serialization import Encoding as _Encoding
+from cryptography.hazmat.primitives.serialization import (
+    Encoding as _Encoding,
+    KeySerializationEncryption as _Encryption,
+)
 from cryptography.hazmat.primitives.serialization import NoEncryption as _NoEncryption
 from cryptography.hazmat.primitives.serialization import PrivateFormat as _PrivateFormat
 from cryptography.hazmat.primitives.serialization import (
@@ -31,6 +34,7 @@ from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
 from cryptography.x509 import Certificate, CertificateBuilder
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from typing_extensions import TypeGuard as _TypeGuard
+from os import PathLike as _PathLike
 
 if TYPE_CHECKING:
     from OpenSSL import crypto as _crypto
@@ -90,7 +94,81 @@ class Encoding(_IntEnum):
         return _ENCODING_SUFFIX_MAP[ext]
 
 
-Encoded = Tuple[bytes, Encoding]
+PathLike = Union[str, _PathLike]
+PasswordLike = Union[bytes, str, None]
+
+ProtectedByteEncoded = Tuple[bytes, Encoding, PasswordLike]
+EncodedBytes = Union[Tuple[bytes, Encoding], ProtectedByteEncoded]
+ProtectedEncodedFile = Union[
+    Tuple[PathLike, Encoding, PasswordLike], Tuple[PathLike, PasswordLike]
+]
+EncodedFile = Union[Tuple[PathLike, Encoding], PathLike, ProtectedEncodedFile]
+Encoded = Union[EncodedFile, EncodedBytes]
+
+
+def _getEncryption(password: PasswordLike) -> _Encryption:
+    if isinstance(password, _Encryption):
+        return password
+    elif isinstance(password, str):
+        return _TextEncryption(password.encode())
+    elif password is None:
+        return _NoEncryption()
+    else:
+        return _TextEncryption(password)
+
+
+def _as_bytes(val, encoding: str = "utf-8") -> bytes:
+    return val.encode(encoding) if isinstance(val, str) else val
+
+
+class _ByteDecoder(NamedTuple):
+    data: bytes
+    encoding: Encoding
+    encryption: PasswordLike
+
+    @staticmethod
+    def new(encoded: EncodedBytes):
+        if len(encoded) == 2:
+            data, encoding = encoded
+            encoding = None
+        else:
+            data, encoding, encryption = encoded
+        return _ByteDecoder(data, encoding, encryption)
+
+
+class _FileDecoder(NamedTuple):
+    path: Path
+    encoding: Encoding
+    encryption: PasswordLike
+
+    @staticmethod
+    def new(encoded: EncodedFile):
+        if not isinstance(encoded, tuple):
+            path = encoded
+            encoding = None
+            encryption = None
+        elif len(encoded) == 2:
+            path, encoding_or_password = encoded
+            if isinstance(encoding_or_password, int):
+                encoding = encoding_or_password
+                encryption = None
+            else:
+                encryption = encoding_or_password
+                encoding = None
+        else:
+            path, encoding, encryption = encoded
+
+        path = Path(path)
+        if not encoding:
+            encoding = Encoding.from_suffix(path.suffix)
+        elif isinstance(encoding, str):
+            encoding = Encoding[encoding]
+
+        return _FileDecoder(path, encoding, encryption)
+
+    def to_bytedecoder(self):
+        return _ByteDecoder(self.path.read_bytes(), self.encoding, self.encryption)
+
 
 _ENCODING_SUFFIX_MAP: "dict[str,Encoding]" = {}
 for t in Encoding:
@@ -109,26 +187,8 @@ class _X509PubCreds(NamedTuple):
     chain: "list[Certificate]"
 
 
-def get_path_and_encoding(encoded: "str|tuple[str, str|Encoding]"):
-    if isinstance(encoded, str):
-        encoding: Encoding = None
-    else:
-        encoded, encoding = encoded
-    path = Path(encoded)
-    if not encoding:
-        encoding = Encoding.from_suffix(path.suffix)
-    elif isinstance(encoding, str):
-        encoding = Encoding[encoding]
-    return path, encoding
-
-
-def get_bytes_and_encoding(encoded: "str|tuple[str, str|Encoding]"):
-    path, encoding = get_path_and_encoding(encoded)
-    return path.read_bytes(), encoding
-
-
-def load_cert(data: bytes, encoding: Encoding, password: str = None):
-    password = password.encode() if password else None
+def load_cert(data: bytes, encoding: Encoding, password: PasswordLike = None):
+    password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
         return store.cert.certificate
@@ -140,8 +200,8 @@ def load_cert(data: bytes, encoding: Encoding, password: str = None):
         raise ValueError(f"Invalid encoding {encoding}")
 
 
-def load_key(data: bytes, encoding: Encoding, password: str = None):
-    password = password.encode() if password else None
+def load_key(data: bytes, encoding: Encoding, password: PasswordLike = None):
+    password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
         if store.key is None:
@@ -172,10 +232,8 @@ def dump_cert(cert: Certificate, encoding: Encoding):
         raise ValueError(f"Invalid encoding {encoding}")
 
 
-def dump_key(key: PrivateKey, encoding: Encoding, password: str = None):
-    encryption = (
-        _NoEncryption() if password is None else _TextEncryption(password.encode())
-    )
+def dump_key(key: PrivateKey, encoding: Encoding, password: PasswordLike = None):
+    encryption = _getEncryption(password)
     if encoding is Encoding.DER:
         return key.private_bytes(_Encoding.DER, _PrivateFormat.PKCS8, encryption)
     elif encoding is Encoding.PEM:
@@ -221,9 +279,9 @@ def parse_pem(pem: bytes):
 
 
 def load_certs(
-    data: bytes, encoding: Encoding, password: str = None
+    data: bytes, encoding: Encoding, password: PasswordLike = None
 ) -> "list[Certificate]":
-    password = password.encode() if password else None
+    password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
         return [store.cert.certificate] + store.additional_certs
@@ -239,10 +297,19 @@ def load_certs(
         raise ValueError(f"Invalid encoding {encoding}")
 
 
+def load_encoded_store(encoded: Encoded):
+    if not isinstance(encoded, tuple) or not isinstance(encoded[0], bytes):
+        store = _FileDecoder.new(encoded).to_bytedecoder()
+    else:
+        store = _ByteDecoder.new(encoded)
+
+    return load_store(*store)
+
+
 def load_store(
-    data: bytes, encoding: Encoding, password: str = None
+    data: bytes, encoding: Encoding, password: PasswordLike = None
 ) -> "tuple[Certificate, PrivateKey|None, list[Certificate]]":
-    password = password.encode() if password else None
+    password = _as_bytes(password)
     if encoding is Encoding.PKCS12:
         store = _pkcs12.load_pkcs12(data, password)
         return store.cert.certificate, store.key, store.additional_certs
@@ -256,7 +323,10 @@ def load_store(
                 key = _load_pem_private_key(data, password)
         return certs[0], key, certs[1:]
     elif encoding is Encoding.DER:
-        return x509.load_der_x509_certificate(data), None, []
+        try:
+            return x509.load_der_x509_certificate(data), None, []
+        except ValueError:
+            return None, _load_der_private_key(data, password), []
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
