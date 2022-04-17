@@ -1,10 +1,12 @@
+from datetime import datetime, timedelta
+from enum import IntFlag
 import ipaddress
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
-from x509creds import PrivateKey, X509Credentials, Certificate, Encoding
+from x509creds import PrivateKey, Certificate
 
 DEF_KEY_SIZE = 2048
-DEF_PUBLIC_EXPONENT = 65537
+CERT_MAX_AGE = timedelta(seconds=397 * 24 * 60 * 60)
 
 
 def into_ip(ip: str):
@@ -17,72 +19,28 @@ def into_ip(ip: str):
 def is_ip(ip: str):
     return into_ip(ip) is not None
 
+   
+try:
+    import tld as _tld
 
-def openssl_transform(creds: X509Credentials):
-    from OpenSSL import crypto
-    from x509creds import parse_pem
-
-    data = creds.dump(Encoding.PEM)
-
-    key:crypto.PKey = None
-    certs:'list[crypto.X509]' = []
-    for section, data in parse_pem(data):
-        if section == "CERTIFICATE":
-            certs.append(crypto.load_certificate(crypto.FILETYPE_PEM, data))
-        elif "PRIVATE KEY" in section and key is None:
-            key = crypto.load_privatekey(crypto.FILETYPE_PEM, data)
-
-    return (
-        certs[0],
-        key,
-        certs[1:],
-    )
+except ImportError:
+    _tld = None
 
 
-def cert_builder(
-    subject: "x509.Name|str",
-    key: "PrivateKey|int|None" = None,
-    issuer: "Certificate|None" = None,
-    is_ca: "bool|None" = None,
-):
-    key = key or DEF_KEY_SIZE
-    if isinstance(key, int):
-        key: PrivateKey = rsa.generate_private_key(DEF_PUBLIC_EXPONENT, key)
-    public_key = key.public_key()
-    issuer_key = issuer.public_key() if issuer else public_key
+def get_wildcard_domain(host: str, strict: bool = True):
+    host_parts = host.split(".", 1)
+    if len(host_parts) < 2 or (strict and not _tld):
+        return host
 
-    subject = (
-        subject
-        if isinstance(subject, x509.Name)
-        else x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, subject)])
-    )
+    if strict:
+        tld: "str|None" = _tld.get_tld(host, fix_protocol=True, fail_silently=True)
 
-    builder = x509.CertificateBuilder(
-        subject_name=subject,
-        serial_number=x509.random_serial_number(),
-        public_key=public_key,
-        issuer_name=issuer.subject if issuer else subject,
-    )
-    if is_ca or (is_ca is None and public_key == issuer_key):
-        builder = builder.add_extension(
-            x509.BasicConstraints(True, 0), critical=True
-        ).add_extension(
-            x509.KeyUsage(
-                key_cert_sign=True,
-                crl_sign=True,
-                digital_signature=False,
-                content_commitment=False,
-                key_encipherment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-    builder = builder.add_extension(
-        x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False
-    ).add_extension(
-        x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key), critical=False
-    )
-    return builder, key
+        # allow using parent domain if:
+        # 1) no suffix (unknown tld)
+        # 2) the parent domain is not the tld
+        if not tld or tld != host_parts[1]:
+            return host_parts[1]
+
+        return host
+    else:
+        return host_parts[1]

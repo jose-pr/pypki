@@ -1,28 +1,32 @@
 from ipaddress import IPv4Address, IPv6Address
-from typing import Callable, Generic, Iterable, Literal, overload
+from os import PathLike
+from typing import Generic, Iterable, Mapping, overload
 from pathlib import Path
-from cryptography.hazmat.primitives.hashes import HashAlgorithm, SHA256
-from x509creds import X509Credentials, Encoding, x509
+from x509creds import (
+    CertPurpose,
+    KeyUsage,
+    X509Credentials,
+    Encoding,
+    X509Issuer,
+    X509PublicCredentials,
+    x509,
+    PublicKey,
+    PrivateKey,
+    HashAlgorithm,
+)
 from datetime import datetime, timedelta
 
-from .utils import cert_builder, into_ip
-from .cache import T, Cache, FileCache, LRUCache
-
-CERT_NOT_AFTER = 397 * 24 * 60 * 60
-
-CERTS_DIR = "./ca/certs/"
-
-CERT_NAME = "certauth sample CA"
-
-DEF_HASH_FUNC = SHA256()
+from .utils import into_ip, get_wildcard_domain
+from .cache import T, Cache
+from .stores import ondiskCredentialStore, onMemoryCredentialStore, _Path
 
 DEF_ENCODING = Encoding.PEM
 
-ROOT_CA = "!!root_ca"
+CredentialsStore = Cache[str, X509Credentials, T]
 
 
 # =================================================================
-class CertificateAuthority(Generic[T]):
+class CertificateAuthority(X509Issuer, Generic[T]):
     """
     Utility class for signing individual certificate
     with a root cert.
@@ -34,32 +38,24 @@ class CertificateAuthority(Generic[T]):
     """
 
     credentials: X509Credentials
-    cache: Cache[str, str, X509Credentials, T]
+    cache: CredentialsStore[T]
 
     def __init__(
         self,
-        credentials: "X509Credentials|str|tuple[str, str|None, str|None]",
-        cache: "Cache[str, str, X509Credentials, T]|None" = None,
-        cert_not_before: "timedelta|int" = 0,
-        cert_not_after: "timedelta|int" = CERT_NOT_AFTER,
-        encoding: "Literal[Encoding.PEM,Encoding.PKCS12]|None" = None,
-        store_password: str = None,
+        credentials: "X509Credentials|_Path|tuple[_Path, str|None, str|None]",
+        cache: "CredentialsStore[T]|int|_Path|None" = None,
+        cert_not_before: "timedelta|int|datetime" = None,
+        cert_not_after: "timedelta|int|datetime" = None,
         hash: "HashAlgorithm|None" = None,
-        transform: "Callable[[X509Credentials], T]" = lambda x: x,
+        verify_tld: bool = True,
+        domain_cert: bool = False,
     ):
-        self.hash = hash or DEF_HASH_FUNC
-        self.encoding = encoding or DEF_ENCODING
-        self.cert_not_before = (
-            timedelta(seconds=cert_not_before)
-            if isinstance(cert_not_before, int)
-            else cert_not_before
-        )
-        self.cert_not_after = (
-            timedelta(seconds=cert_not_after)
-            if isinstance(cert_not_after, int)
-            else cert_not_after
-        )
-        self._root_creds_new = False
+        self.hash = hash
+        self.cert_not_before = cert_not_before
+        self.cert_not_after = cert_not_after
+        self._ca_created = self._modified = False
+        self.verify_tld = verify_tld
+        self.domain_cert = domain_cert
 
         if isinstance(credentials, str):
             credentials = (credentials, None, None)
@@ -67,21 +63,22 @@ class CertificateAuthority(Generic[T]):
             path = Path(credentials[0])
             name = credentials[1] if credentials[1] else path.stem
             password = credentials[2]
-            try:
-                encoding = Encoding.from_suffix(path.suffix)
-            except:
-                encoding = self.encoding
+            encoding = Encoding.from_suffix(path.suffix)
 
             if path.exists():
                 credentials = X509Credentials.load(
                     cert=(path.read_bytes(), encoding), password=password
                 )
             else:
-                builder, key = self._cert_builder(name, True)
-                cert = builder.sign(key, self.hash)
-                credentials = X509Credentials(cert, key, [])
+                credentials = X509Credentials.create(
+                    name,
+                    purpose=CertPurpose.CA,
+                    not_before=self.cert_not_before,
+                    not_after=self.cert_not_after,
+                    hash_alg=self.hash,
+                )
                 path.write_bytes(credentials.dump(encoding, password))
-                self._root_creds_new = True
+                self._ca_created = True
 
             if (
                 credentials[1]
@@ -95,119 +92,117 @@ class CertificateAuthority(Generic[T]):
                 )
 
         self.credentials = credentials
-        if isinstance(cache, str):
-            _suffix = "." + self.encoding.exts()[0]
-
-            def as_bytes(creds: X509Credentials) -> "list[bytes]":
-                return [creds.dump(self.encoding, password=store_password)]
-
-            def from_bytes(data: Iterable[bytes]) -> T:
-                creds = X509Credentials.load(
-                    (next(data), self.encoding), password=store_password
-                )
-                return transform(creds)
-
-            def stored_as(host: str):
-                return [host.replace(":", "-") + _suffix]
-
-            self.cache = FileCache[str, X509Credentials, T](
-                cache, as_bytes=as_bytes, from_bytes=from_bytes, stored_as=stored_as
-            )
+        if isinstance(cache, (str, PathLike)):
+            self.cache = ondiskCredentialStore(cache)
         elif isinstance(cache, int):
-            self.cache = LRUCache(max_size=cache, transform=transform)
+            self.cache = onMemoryCredentialStore(cache)
         elif cache is None:
-            self.cache = LRUCache(max_size=100, transform=transform)
+            self.cache = onMemoryCredentialStore(100)
         else:
             self.cache = cache
 
-    @overload
-    def load_cert(
+    def load_creds(
         self,
         host: str,
         overwrite: bool = False,
-        include_cache_key: Literal[True] = True,
+        domain_cert: bool = None,
         sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
-    ) -> "tuple[T, str]":
-        ...
-
-    @overload
-    def load_cert(
-        self,
-        host: str,
-        overwrite: bool = False,
-        include_cache_key: Literal[False] = False,
-        sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
-    ) -> T:
-        ...
-
-    def load_cert(
-        self,
-        host: str,
-        overwrite: bool = False,
-        include_cache_key: bool = False,
-        sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
+        **builder_kargs
     ):
 
         sans = sans or []
-
         creds = None
+        domain_cert = self.domain_cert if domain_cert is None else domain_cert
+
+        if domain_cert and not host.startswith("*"):
+            host = "*." + get_wildcard_domain(host, self.verify_tld)
 
         if not overwrite:
             creds = self.cache.get(host)
 
         if not creds:
-            # if not cached, generate new root or host cert
-            creds = self.generate_host_cert(
-                host,
-                sans=sans,
-            )
-            # store cert in cache
+            self._modified = True
+            creds = self.generate_host_creds(host, sans=sans, **builder_kargs)
             self.cache[host] = creds
             creds = self.cache[host]
-
-        if not include_cache_key:
-            return creds
-
         else:
-            cache_key = self.cache.stored_as(host)
-            if cache_key and not isinstance(cache_key, str):
-                cache_key = str(cache_key)
+            self._modified = False
 
-            return creds, cache_key
+        return creds
 
-    def cert_for_host(
+    def sign(self, builder: x509.CertificateBuilder, hash_alg: HashAlgorithm = None):
+        return self.credentials.sign(builder, hash_alg or self.hash)
+
+    @overload
+    def generate(
+        self,
+        subject: "x509.Name|str",
+        key: "PublicKey" = None,
+        purpose: CertPurpose = None,
+        not_before: "datetime|int|timedelta" = None,
+        not_after: "datetime|int|timedelta" = None,
+        extensions: Iterable[x509.Extension] = None,
+        key_usage: "dict[KeyUsage,bool]" = None,
+        ext_key_usage: "list" = None,
+        hash_alg: HashAlgorithm = None,
+    ) -> "X509PublicCredentials":
+        ...
+
+    @overload
+    def generate(
+        self,
+        subject: "x509.Name|str",
+        key: "PrivateKey|int|None" = None,
+        purpose: CertPurpose = None,
+        not_before: "datetime|int|timedelta" = None,
+        not_after: "datetime|int|timedelta" = None,
+        extensions: Iterable[x509.Extension] = None,
+        key_usage: "dict[KeyUsage,bool]" = None,
+        ext_key_usage: "list" = None,
+        hash_alg: HashAlgorithm = None,
+    ) -> X509Credentials:
+        ...
+
+    def generate(
+        self,
+        subject: "x509.Name|str",
+        key: "PrivateKey|PublicKey|int|None" = None,
+        purpose: CertPurpose = None,
+        not_before: "datetime|int|timedelta" = None,
+        not_after: "datetime|int|timedelta" = None,
+        extensions: Iterable[x509.Extension] = None,
+        key_usage: "dict[KeyUsage,bool]" = None,
+        ext_key_usage: "list" = None,
+        hash_alg: HashAlgorithm = None,
+    ) -> "X509Credentials|X509PublicCredentials":
+        return super().generate(
+            subject,
+            key,
+            purpose,
+            not_before or self.cert_not_before,
+            not_after or self.cert_not_after,
+            extensions,
+            key_usage,
+            ext_key_usage,
+            hash_alg,
+        )
+
+    @overload
+    def generate_host_creds(
         self,
         host: str,
-        overwrite=False,
         sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
-    ):
+        key: "PublicKey" = None,
+        **builder_kargs
+    ) -> "X509PublicCredentials":
+        ...
 
-        res = self.load_cert(
-            host,
-            overwrite=overwrite,
-            include_cache_key=True,
-            sans=sans,
-        )
-
-        return res[1]
-
-    def _cert_builder(self, certname, root=False):
-        builder, key = cert_builder(
-            certname, issuer=None if root else self.credentials.cert
-        )
-        start = datetime.now() + self.cert_not_before
-        builder = builder.not_valid_before(start).not_valid_after(
-            start + self.cert_not_after
-        )
-        return builder, key
-
-    def generate_host_cert(
+    def generate_host_creds(
         self,
-        host,
+        host: str,
         sans: "Iterable[str|IPv6Address|IPv4Address]|None" = None,
-    ):
-
-        builder, key = self._cert_builder(host)
+        **builder_kargs
+    ) -> X509Credentials:
         _done = []
         _sans = []
         for san in [host, *sans]:
@@ -218,7 +213,18 @@ class CertificateAuthority(Generic[T]):
                     _sans.append(x509.IPAddress(ip))
                 _sans.append(x509.DNSName(san))
                 _done.append(san)
+        extensions: list = builder_kargs.setdefault("extensions", [])
+        extensions.append(x509.SubjectAlternativeName(_sans))
+        builder_kargs["purpose"] = CertPurpose.SERVER | CertPurpose.CLIENT
+        return self.generate(
+            host,
+            **builder_kargs,
+        )
 
-        builder = builder.add_extension(x509.SubjectAlternativeName(_sans), False)
-        cert = builder.sign(self.credentials.key, self.hash)
-        return X509Credentials(cert, key, [self.credentials.cert])
+    def __getitem__(self, host: "str|dict"):
+        if isinstance(host, str):
+            return self.load_creds(host)
+        elif isinstance(host, Mapping):
+            return self.load_creds(**host)
+        else:
+            raise KeyError(host)

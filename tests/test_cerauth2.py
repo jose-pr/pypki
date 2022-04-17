@@ -8,7 +8,7 @@ from certauth2.__main__ import main
     hostname: str = r.hostname
     sans: "list[str]" = r.sans.split(",")
     overwrite: bool = r.force if not hostname else False
-"""
+
 main(
     [
         "--certs-dir",
@@ -22,12 +22,17 @@ main(
         "--sans",
         "172.19.1.1,*.example.com",
     ]
-)
-from certauth2 import CertificateAuthority
-from certauth2.utils import openssl_transform
+)"""
+from certauth2 import CertificateAuthority, Encoding
+from certauth2.stores import ondiskCredentialStore
+
+derStore = ondiskCredentialStore("./.private/der", encoding=Encoding.DER)
+
 
 ca = CertificateAuthority(
-    ("My Custom CA", "./.private/my-ca.pem", None), transform=openssl_transform, cache=50
+    ("./.private/my-ca.pem", "My Custom CA", None),
+    cache=derStore,
 )
-cert, key, chain = ca.load_cert("example.com")
+cert, key, chain = ca.load_creds("example.com", overwrite=True)
 pass
+

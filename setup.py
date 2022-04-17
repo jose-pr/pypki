@@ -25,7 +25,6 @@ def clean():
 
 
 pkgs = find_packages(str(src))
-print(pkgs)
 import mimetypes
 
 readme_file = next((f for f in src.iterdir() if f.stem == "README"), None)

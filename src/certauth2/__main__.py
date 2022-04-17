@@ -1,11 +1,9 @@
 # =================================================================
 from argparse import ArgumentParser
 from pathlib import Path
-from x509creds import X509Credentials
-from . import CERTS_DIR
 from . import CertificateAuthority
-from .cache import FileCache
 
+CERTS_DIR = "./ca/certs/"
 
 def main(args=None):
     parser = ArgumentParser(description="Certificate Authority Cert Maker Tools")
@@ -66,7 +64,7 @@ def main(args=None):
 
     # Just creating the root cert
     if not hostname:
-        if ca._root_creds_new:
+        if ca._ca_created:
             print(f'Created new root cert: "{issuer}"')
             return 0
         else:
@@ -80,8 +78,7 @@ def main(args=None):
         overwrite=overwrite,
         sans=sans,
     )
-    cache: FileCache[str, X509Credentials, X509Credentials] = ca.cache
-    if cache.modified:
+    if ca._modified:
         print(f'Created new cert "{ hostname }" signed by {issuer}')
         return 0
 
