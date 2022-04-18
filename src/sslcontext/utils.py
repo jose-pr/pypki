@@ -1,3 +1,4 @@
+from itertools import count
 from typing import TYPE_CHECKING, Sequence
 import os, sys
 import warnings
@@ -29,11 +30,14 @@ if os.name == "nt":
     ):
         certs = bytearray()
         try:
+            count = 0
             for cert, encoding, trust in _wincerts(storename):
                 # CA certs are never PKCS#7 encoded
                 if encoding == "x509_asn":
                     if trust is True or purpose.oid in trust:
                         certs.extend(cert)
+                        count += 1
+            print(count)
         except PermissionError:
             warnings.warn("unable to enumerate Windows certificate store")
         if certs:

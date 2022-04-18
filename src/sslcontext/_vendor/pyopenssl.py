@@ -347,14 +347,16 @@ class PyOpenSSLContext(SSLContext):
         self._ctx.set_cipher_list(ciphers)
 
     def load_verify_locations(self, cafile=None, capath=None, cadata=None):
+        import x509creds
         if cafile is not None:
             cafile = cafile.encode("utf-8")
         if capath is not None:
             capath = capath.encode("utf-8")
         try:
-            self._ctx.load_verify_locations(cafile, capath)
+            if capath or cafile:
+                self._ctx.load_verify_locations(cafile, capath)
             if cadata is not None:
-                self._ctx.load_verify_locations(BytesIO(cadata))
+                _load_ca_certs(crypto.FILETYPE_ASN1, bytes(cadata), self._ctx)
         except OpenSSL.SSL.Error as e:
             raise SSLError("unable to load trusted certificates: %r" % e)
 
@@ -417,3 +419,54 @@ def is_pyopenssl(ctx:object) -> TypeGuard[PyOpenSSLContext]:
         return True
     else:
         return False
+
+#taken from cpython impl to load cdata
+def _load_certs(type:int, buffer:bytes):
+    certs: 'list[crypto.X509]' = []
+    if isinstance(buffer, str):
+        buffer = buffer.encode("ascii")
+    bio = crypto._new_mem_buf(buffer)
+
+    while True:
+        try:
+            if type == crypto.FILETYPE_PEM:
+                x509 = crypto._lib.PEM_read_bio_X509(bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL)
+            elif type == crypto.FILETYPE_ASN1:
+                x509 = crypto._lib.d2i_X509_bio(bio, crypto._ffi.NULL)
+            else:
+                raise ValueError(
+                    "type argument must be FILETYPE_PEM or FILETYPE_ASN1")
+
+            if x509 == crypto._ffi.NULL:
+                crypto._raise_current_error()
+
+            cert =  crypto.X509._from_raw_x509_ptr(x509)
+            if not cert:
+                break
+            certs.append(cert)
+        except  crypto.Error as e:
+            break
+        return certs
+
+def _load_ca_certs(type:int, buffer:bytes, context:OpenSSL.SSL.Context):
+    if isinstance(buffer, str):
+        buffer = buffer.encode("ascii")
+    bio = crypto._new_mem_buf(buffer)
+    count = 0
+    while True:
+        try:
+            if type == crypto.FILETYPE_PEM:
+                x509 = crypto._lib.PEM_read_bio_X509(bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL)
+            elif type == crypto.FILETYPE_ASN1:
+                x509 = crypto._lib.d2i_X509_bio(bio, crypto._ffi.NULL)
+            else:
+                raise ValueError(
+                    "type argument must be FILETYPE_PEM or FILETYPE_ASN1")
+
+            if x509 == crypto._ffi.NULL:
+                crypto._raise_current_error()
+            crypto._lib.SSL_CTX_add_extra_chain_cert(context._context, x509)
+            count += 1
+        except  crypto.Error as e:
+            break
+    return count
