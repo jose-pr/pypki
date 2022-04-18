@@ -1,4 +1,4 @@
-from interface import SSLContext, SSLSocket, SSLContextProvider
+from .interface import SSLContext, SSLSocket, SSLContextProvider
 from ._vendor.ssl import *
 try:
     from ssl import SSLContext as NativeSSLContext, _SSLMethod

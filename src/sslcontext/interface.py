@@ -102,7 +102,7 @@ class SSLContext(ABC):
     @abstractmethod
     def wrap_socket(
         self,
-        sock: socket,
+        sock:'socket',
         server_side=False,
         do_handshake_on_connect=True,
         suppress_ragged_eofs=True,
@@ -112,7 +112,6 @@ class SSLContext(ABC):
 
 
 class SSLContextProvider(ABC):
-    @abstractmethod
     def sslcontext(self, protocol: "SSLMethod") -> SSLContext:
         errs = []
         try:
