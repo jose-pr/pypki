@@ -110,3 +110,23 @@ class SSLContext(ABC):
     ) -> SSLSocket:
         ...
 
+
+class SSLContextProvider(ABC):
+    @abstractmethod
+    def sslcontext(self, protocol: "SSLMethod") -> SSLContext:
+        errs = []
+        try:
+            from ssl import SSLContext
+        except BaseException as e:
+            errs.append(e)
+            SSLContext = None
+        if SSLContext is None:
+            try:
+                from ._vendor.pyopenssl import PyOpenSSLContext as SSLContext
+            except BaseException as e:
+                errs.append(e)
+                pass
+        if SSLContext:
+            return SSLContext(protocol)
+        else:
+            raise Exception("Could not load a module that provides a SSLContext", errs)
