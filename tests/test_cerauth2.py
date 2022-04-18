@@ -24,7 +24,7 @@ main(
     ]
 )"""
 from certauth2 import CertificateAuthority, Encoding
-from certauth2.stores import ondiskPathStore, ondiskCredentialStore
+from certauth2.creds_store import ondiskPathStore, ondiskCredentialStore
 
 pemStore = ondiskPathStore("./.private/pem", encoding=Encoding.PEM)
 derStore = ondiskCredentialStore("./.private/der", encoding=Encoding.DER)
@@ -32,8 +32,8 @@ derStore = ondiskCredentialStore("./.private/der", encoding=Encoding.DER)
 store = derStore
 
 ca = CertificateAuthority(
-    ("./.private/my-ca.pem", "My Custom CA", None),
-    cache=store,
+    "./.private/my-ca.pem",
+    store=store,
 )
-cert, key, chain = ca["example.com"]
+key, cert, chain = ca["example.com"]
 pass

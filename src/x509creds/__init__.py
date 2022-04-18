@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
-from functools import reduce
+from abc import ABC as _ABC, abstractmethod as _abstractmethod
+from functools import reduce as _reduce
 
 from .utils import *
 from .utils import (
@@ -33,7 +33,7 @@ class X509PublicCredentials(_X509PubCreds):
                 [ca.public_bytes(_Encoding.DER) for ca in self.chain],
             )
         elif encoding is Encoding.PEM:
-            return reduce(
+            return _reduce(
                 lambda acc, cert: acc + cert.public_bytes(_Encoding.PEM),
                 self.chain,
                 self.cert.public_bytes(_Encoding.PEM),
@@ -117,11 +117,11 @@ class X509PublicCredentials(_X509PubCreds):
             cert: _crypto.X509,
             chain: Iterable[_crypto.X509] = [],
         ):
-            return from_pyopenssl(cert, None, chain)
+            return from_pyopenssl(cert, chain)
 
 
-class X509Issuer(ABC):
-    @abstractmethod
+class X509Issuer(_ABC):
+    @_abstractmethod
     def sign(
         self, builder: CertificateBuilder, hash_alg: HashAlgorithm
     ) -> X509PublicCredentials:
@@ -202,14 +202,14 @@ class X509Credentials(_X509Creds, X509Issuer):
         )
         if encoding is Encoding.DER:
             return (
-                self.cert.public_bytes(_Encoding.DER),
                 self.key.private_bytes(_Encoding.DER, _PrivateFormat.PKCS8, encryption),
+                self.cert.public_bytes(_Encoding.DER),
                 [ca.public_bytes(_Encoding.DER) for ca in self.chain],
             )
         elif encoding is Encoding.PEM:
             return self.key.private_bytes(
                 _Encoding.PEM, _PrivateFormat.PKCS8, encryption
-            ) + reduce(
+            ) + _reduce(
                 lambda acc, cert: acc + cert.public_bytes(_Encoding.PEM),
                 self.chain,
                 self.cert.public_bytes(_Encoding.PEM),
@@ -237,7 +237,7 @@ class X509Credentials(_X509Creds, X509Issuer):
         self, builder: CertificateBuilder, hash_alg: HashAlgorithm = None
     ) -> X509PublicCredentials:
         return X509PublicCredentials(
-            generate_certificate(builder, self, hash_alg or DEF_HASH_ALG),
+            generate_certificate(builder, self, hash_alg),
             [self.cert, *self.chain],
         )
 
@@ -275,10 +275,10 @@ class X509Credentials(_X509Creds, X509Issuer):
 
     def apply_to_sslcontext(self, sslcontext: "SSLContext"):
         if is_pyopenssl(sslcontext):
-            crt, key, chain = self.to_pyopenssl()
+            key, cert, chain = self.to_pyopenssl()
             for ca in chain:
                 sslcontext._ctx.add_extra_chain_cert(ca)
-            sslcontext._ctx.use_certificate(crt)
+            sslcontext._ctx.use_certificate(cert)
             sslcontext._ctx.use_privatekey(key)
             return
 
@@ -296,50 +296,58 @@ class X509Credentials(_X509Creds, X509Issuer):
         def to_pyopenssl(self):
             key = dump_key(self.key, Encoding.PEM)
             return (
-                _crypto.X509.from_cryptography(self.cert),
                 _crypto.load_privatekey(_crypto.FILETYPE_PEM, key),
+                _crypto.X509.from_cryptography(self.cert),
                 [_crypto.X509.from_cryptography(ca) for ca in self.chain],
             )
 
         @staticmethod
         def from_pyopenssl(
-            cert: _crypto.X509,
             key: _crypto.PKey,
+            cert: _crypto.X509,
             chain: Iterable[_crypto.X509] = [],
         ):
-            return from_pyopenssl(cert, key, chain)
+            return from_pyopenssl(key, cert, chain)
 
 
 if _crypto:
 
     @overload
     def from_pyopenssl(
-        cert: _crypto.X509,
-        key: Literal[None] = None,
-        chain: Iterable[_crypto.X509] = [],
+        cert: _crypto.X509, chain: Iterable[_crypto.X509] = [], /
     ) -> X509PublicCredentials:
         ...
 
     @overload
     def from_pyopenssl(
-        cert: _crypto.X509, key: _crypto.PKey, chain: Iterable[_crypto.X509] = []
+        key: None, cert: _crypto.X509, chain: Iterable[_crypto.X509] = [], /
+    ) -> X509PublicCredentials:
+        ...
+
+    @overload
+    def from_pyopenssl(
+        key: _crypto.PKey, cert: _crypto.X509, chain: Iterable[_crypto.X509] = [], /
     ) -> X509Credentials:
         ...
 
-    def from_pyopenssl(
-        cert: _crypto.X509,
-        key: "None|_crypto.PKey" = None,
-        chain: Iterable[_crypto.X509] = [],
-    ):
+    def from_pyopenssl(*args):
+        cert: _crypto.X509
+        key: "None|_crypto.PKey"
+        chain: Iterable[_crypto.X509]
+        if isinstance(args[0], _crypto.X509):
+            cert, chain = args
+            key = None
+        else:
+            key, cert, chain = args
         return (
             X509Credentials(
-                cert.to_cryptography(),
                 key.to_cryptography_key(),
-                [ca.to_cryptography() for ca in chain],
+                cert.to_cryptography(),
+                [ca.to_cryptography() for ca in (chain or [])],
             )
             if key
             else X509PublicCredentials(
-                cert.to_cryptography(), [ca.to_cryptography() for ca in chain]
+                cert.to_cryptography(), [ca.to_cryptography() for ca in (chain or [])]
             )
         )
 
@@ -349,21 +357,20 @@ def load_creds(*stores: Encoded):
     cert = None
     chain = []
     for store in stores:
-        _cert, _key, _chain = X509EncodedStore(store).load_key_and_certificates()
-        if _key and key is None:
-            key = _key
-        if _cert:
-            if cert is None:
-                cert = _cert
+        for decoded in X509EncodedStore(store).decode():
+            if isinstance(decoded, Certificate):
+                if cert is None:
+                    cert = decoded
+                else:
+                    chain.append(cert)
             else:
-                chain.append(cert)
-        chain.extend(_chain)
+                if key is None:
+                    key = decoded
+
     if cert is None:
         raise ValueError("No certificate was found")
     return (
-        X509Credentials(cert, key, _chain)
-        if key
-        else X509PublicCredentials(cert, _chain)
+        X509Credentials(key, cert, chain) if key else X509PublicCredentials(cert, chain)
     )
 
 
@@ -424,7 +431,7 @@ def create_creds(
     if not isinstance(builder, CertificateBuilder):
         builder, key = builder
     if issuer is None:
-        cert = generate_certificate(builder, (builder._subject_name, key), hash_alg)
+        cert = generate_certificate(builder, (key, builder._subject_name), hash_alg)
         chain = []
     else:
         cert, chain = issuer.sign(builder, hash_alg)
@@ -432,4 +439,4 @@ def create_creds(
     if is_public_key(key):
         return X509PublicCredentials(cert, chain)
     else:
-        return X509Credentials(cert, key, chain)
+        return X509Credentials(key, cert, chain)

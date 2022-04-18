@@ -12,7 +12,7 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
-class Cache(ABC, Generic[K, T, R]):
+class Store(ABC, Generic[K, T, R]):
     def __contains__(self, key):
         try:
             self[key]
@@ -46,7 +46,7 @@ class Cache(ABC, Generic[K, T, R]):
 Transform = Callable[[T], R]
 
 
-class FileCache(Cache[K, T, R]):
+class FileStore(Store[K, T, R]):
     def __init__(
         self,
         cache_dir: str,
@@ -100,7 +100,7 @@ class FileCache(Cache[K, T, R]):
         return self._load(_read())
 
 
-class FileStorage(FileCache[K, T, R]):
+class FilePathStore(FileStore[K, T, R]):
     def __getitem__(self, key: K):
         return self.stored_as(key)
 
@@ -108,7 +108,7 @@ class FileStorage(FileCache[K, T, R]):
         return super().__getitem__(key)
 
 
-class LRUCache(Cache[K, T, R]):
+class LRUCache(Store[K, T, R]):
     def __init__(self, max_size: int, transform: Transform[T, R] = lambda x: x):
         self._cache: "OrderedDict[S,R]" = OrderedDict()
         self.max_size = max_size

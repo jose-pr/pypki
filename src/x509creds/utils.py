@@ -56,9 +56,11 @@ if TYPE_CHECKING:
 else:
     try:
         from OpenSSL import crypto as _crypto, SSL as _SSL
+
         try:
             from sslcontext import is_pyopenssl
         except:
+
             def is_pyopenssl(ctx):
                 if hasattr(ctx, "_ctx") and isinstance(ctx._ctx, _SSL.Context):
                     return True
@@ -67,8 +69,10 @@ else:
 
     except ImportError:
         _crypto = None
+
         def is_pyopenssl(ctx):
             return False
+
 
 ExtensionLike = Union[
     x509.Extension,
@@ -193,9 +197,10 @@ class X509EncodedStore(ABC):
     def __exit__(self, *args):
         self.close()
 
-    def iter_decode(self):
+    def decode(self):
         with self as (io, encoding, password):
-            return load_all(io, encoding, password)
+            yield from decode(io, encoding, password)
+        return
 
     def load_key_and_certificates(self):
         with self as (io, encoding, password):
@@ -279,14 +284,22 @@ for t in Encoding:
 
 
 class _X509Creds(NamedTuple):
-    cert: Certificate
     key: PrivateKey
+    cert: Certificate
     chain: "list[Certificate]"
+
+    @property
+    def subject(self):
+        return self.cert.subject
 
 
 class _X509PubCreds(NamedTuple):
     cert: Certificate
     chain: "list[Certificate]"
+
+    @property
+    def subject(self):
+        return self.cert.subject
 
 
 def load_der(data: bytes, password: bytes = None):
@@ -450,29 +463,34 @@ def load_certs(
 
 def load_key_and_certificates(
     io: "bytes|BinaryIO", encoding: Encoding, password: PasswordLike = None
-) -> "tuple[Certificate|None, PrivateKey|None, list[Certificate]]":
+) -> "tuple[ PrivateKey|None, Certificate|None, list[Certificate]]":
     password = _getPassword(password)
     if encoding is Encoding.PKCS12:
-        key, cert, chain = _pkcs12.load_key_and_certificates(
+        return _pkcs12.load_key_and_certificates(
             io.read() if not isinstance(io, bytes) else io, password
         )
-        return cert, key, chain
     elif encoding is Encoding.PEM:
         key = None
         certs = []
         for section, data in iter_pem(io):
             if section == "CERTIFICATE":
                 certs.append(x509.load_pem_x509_certificate(data))
-            elif "PRIVATE KEY" in section and key is None:
-                key = _load_pem_private_key(data, password)
-        return certs[0], key, certs[1:]
+            elif "PRIVATE KEY" in section:
+                if key is None:
+                    key = _load_pem_private_key(data, password)
+                else:
+                    raise ValueError("Found unexpected private key in PEM credentials")
+            else:
+                raise ValueError(f"Found unexpected section in PEM {section}")
+        return key, certs[0], certs[1:]
     elif encoding is Encoding.DER:
-        return load_der(io.read() if not isinstance(io, bytes) else io, password)
+        found = load_der(io.read() if not isinstance(io, bytes) else io, password)
+        return None, found, [] if isinstance(found, Certificate) else found, None, []
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
 
-def load_all(
+def decode(
     io: "BinaryIO|bytes", encoding: Encoding, password: PasswordLike = None
 ) -> "Iterator[PrivateKey|Certificate]":
     password = _getPassword(password)
@@ -511,9 +529,9 @@ def parse_extension(ext_like: ExtensionLike) -> x509.Extension:
         return x509.Extension(oid=ext_like[0], value=ext_like[1], critical=ext_like[2])
 
 
-from ipaddress import ip_address as _ip, IPv4Address as ipv4, IPv6Address as ipv6
+from ipaddress import ip_address as _ip, IPv4Address as _ipv4, IPv6Address as _ipv6
 
-IPAddress = Tuple[ipv4, ipv6]
+IPAddress = Tuple[_ipv4, _ipv6]
 
 
 def into_ip(ip: str):
@@ -576,6 +594,7 @@ def cert_builder(
 ):
     key = key or DEF_KEY_SIZE
     extensions = [parse_extension(e) for e in extensions] if extensions else []
+    purpose = purpose or CertPurpose._
 
     if isinstance(key, int):
         _ret_key = True
@@ -624,7 +643,7 @@ def cert_builder(
     ext_key_usage = ext_key_usage or []
 
     if CertPurpose.CA in purpose:
-        key_usage = {"key_cert_sign": True, "crl_sign": True}
+        key_usage.update({"key_cert_sign": True, "crl_sign": True})
         builder = builder.add_extension(x509.BasicConstraints(True, 0), critical=True)
 
     if CertPurpose.SERVER in purpose:
@@ -661,20 +680,19 @@ def cert_builder(
 
 def generate_certificate(
     builder: CertificateBuilder,
-    issuer: "_X509Creds|tuple[x509.Name|Certificate, PrivateKey]",
+    issuer: "_X509Creds|tuple[PrivateKey,x509.Name|Certificate|_X509PubCreds]",
     hash_alg: HashAlgorithm = None,
 ):
-    signing_key = issuer[1]
-    pub_key = signing_key.public_key()
-    if isinstance(issuer[0], x509.Name):
-        issuer_name = issuer[0]
+    key, name = issuer
+    if isinstance(name, x509.Name):
+        name = name
     else:
-        issuer_name = issuer[0].subject
+        name = name.subject
     return (
-        builder.issuer_name(issuer_name)
+        builder.issuer_name(name)
         .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(pub_key),
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()),
             critical=False,
         )
-        .sign(signing_key, hash_alg or DEF_HASH_ALG)
+        .sign(key, hash_alg or DEF_HASH_ALG)
     )

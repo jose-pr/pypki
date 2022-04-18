@@ -65,7 +65,7 @@ In-memory Certificate Cache
    ca = CertificateAuthority(
       ("My Custom CA", "my-ca.pem", None), cache=50
    )
-   cert, key, chain = ca["example.com"].to_pyopenssl()
+   key, cert, chain = ca["example.com"].to_pyopenssl()
    
 This configuration stores the root CA at ``my-ca.pem`` but uses an in-memory certificate cache for dynamically created certs. 
 By default the default store returns X509Credentials which are just a NamedTuple of (cert, key, chain) in ``cryptography`` format with methods to help load, dump and transform them into other formats.
@@ -76,11 +76,12 @@ The ``cert`` and ``key`` can then be used with `OpenSSL.SSL.Context.use_certific
 
 .. code:: python
 
-        context = SSl.Context(...)
-        context.use_privatekey(key)
-        context.use_certificate(cert)
-        for ca in chain:
-         context.add_extra_chain_cert(ca)
+         context = SSl.Context(...)
+         context.use_privatekey(key)
+         context.use_certificate(cert)
+         for ca in chain:
+            context.add_extra_chain_cert(ca)
+     
 
 Custom Cache
 ~~~~~~~~~~~~
@@ -92,24 +93,24 @@ A custom cache implementations which stores and retrieves per-host certificates 
    from certauth2 import CertificateAuthority
    from certauth2.cache import Cache
 
-   class CustomCache(Cache):
-      def __init__(
-         self,
-         transform = lambda x: x,
-      ):
+   class PyOpenSSLCredentialStore(Cache):
+      def __init__(self):
          self._cache = {}
-         self._transform = transform
 
       def __setitem__(self, key, item):
-         key = self._stored_as(key)
-         self._cache[key] = self._transform(item)
+         self._cache[key] = item.to_pyopenssl()
       
       def __getitem__(self, key):
-         key = self._stored_as(key)
          return self._cache[key]
 
-   ca = CertificateAuthority('my-ca.pem', cache=CustomCache())
-   creds = ca['example.com']
+   ca = CertificateAuthority('my-ca.pem', cache=PyOpenSSLCredentialStore())
+   key, cert, chain = ca['example.com']
+   context = SSl.Context(...)
+   context.use_privatekey(key)
+   context.use_certificate(cert)
+   for ca in chain:
+      context.add_extra_chain_cert(ca)
+     
 
 
 Wildcard Certs

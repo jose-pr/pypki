@@ -20,10 +20,12 @@ from datetime import datetime, timedelta
 from x509creds.utils import parse_sans
 
 from .utils import is_ip, get_wildcard_domain
-from .cache import T, Cache
-from .stores import ondiskCredentialStore, onMemoryCredentialStore
-
-CredentialsStore = Cache[str, X509Credentials, T]
+from .store import T
+from .creds_store import (
+    ondiskCredentialStore,
+    onMemoryCredentialStore,
+    CredentialsStore,
+)
 
 
 class CertificateAuthority(X509Issuer, Generic[T]):
@@ -33,12 +35,40 @@ class CertificateAuthority(X509Issuer, Generic[T]):
     """
 
     credentials: X509Credentials
-    cache: CredentialsStore[T]
+    store: CredentialsStore[T]
+
+    @overload
+    def __new__(
+        self,
+        credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
+        store: "int|ValidPath|None" = None,
+        cert_not_before: "timedelta|int|datetime" = None,
+        cert_not_after: "timedelta|int|datetime" = None,
+        hash: "HashAlgorithm|None" = None,
+        verify_tld: bool = True,
+        domain_cert: bool = False,
+    ) -> "CertificateAuthority[X509Credentials]":
+        ...
+    @overload
+    def __new__(
+        self,
+        credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
+        store: "CredentialsStore[T]" = None,
+        cert_not_before: "timedelta|int|datetime" = None,
+        cert_not_after: "timedelta|int|datetime" = None,
+        hash: "HashAlgorithm|None" = None,
+        verify_tld: bool = True,
+        domain_cert: bool = False,
+    ) -> "CertificateAuthority[T]":
+        ...
+
+    def __new__(cls, *args, **kwds):
+        return super().__new__(cls, *args, **kwds)
 
     def __init__(
         self,
         credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
-        cache: "CredentialsStore[T]|int|ValidPath|None" = None,
+        store: "CredentialsStore[T]|int|ValidPath|None" = None,
         cert_not_before: "timedelta|int|datetime" = None,
         cert_not_after: "timedelta|int|datetime" = None,
         hash: "HashAlgorithm|None" = None,
@@ -85,14 +115,14 @@ class CertificateAuthority(X509Issuer, Generic[T]):
                 )
 
         self.credentials = credentials
-        if isinstance(cache, (str, PathLike)):
-            self.cache = ondiskCredentialStore(cache)
-        elif isinstance(cache, int):
-            self.cache = onMemoryCredentialStore(cache)
-        elif cache is None:
-            self.cache = onMemoryCredentialStore(100)
+        if isinstance(store, (str, PathLike)):
+            self.store = ondiskCredentialStore(store)
+        elif isinstance(store, int):
+            self.store = onMemoryCredentialStore(store)
+        elif store is None:
+            self.store = onMemoryCredentialStore(100)
         else:
-            self.cache = cache
+            self.store = store
 
     def load_creds(
         self,
@@ -110,14 +140,14 @@ class CertificateAuthority(X509Issuer, Generic[T]):
             host = "*." + get_wildcard_domain(host, self.verify_tld)
 
         if not overwrite:
-            creds = self.cache.get(host)
+            creds = self.store.get(host)
 
         if not creds:
             sans = [host, *(sans or [])]
             self._modified = True
             creds = self.generate_host_creds(host, sans=sans, **builder_kargs)
-            self.cache[host] = creds
-            creds = self.cache[host]
+            self.store[host] = creds
+            creds = self.store[host]
         else:
             self._modified = False
 

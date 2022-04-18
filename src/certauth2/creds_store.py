@@ -12,7 +12,9 @@ from x509creds import (
 from x509creds.utils import load_der
 
 
-from .cache import FileCache, FileStorage, LRUCache, Transform, T
+from .store import FileStore, FilePathStore, LRUCache, Transform, T, Store
+
+CredentialsStore = Store[str, X509Credentials, T]
 
 
 def _ondiskStoreFuncs(
@@ -37,16 +39,16 @@ def _ondiskStoreFuncs(
             cert = load_der(next(iterio).read())
             key = load_der(next(iterio).read(), password)
             chain = list(load_der_archive(next(iterio), password))
-            creds = X509Credentials(cert, key, chain)
+            creds = X509Credentials(key, cert, chain)
         else:
             creds = X509Credentials.load((next(iterio).read(), encoding, password))
         return transform(creds)
 
     def stored_as(host: str):
+        base = host.replace(":", "-")
         if encoding is Encoding.DER:
-            base = host.replace(":", "-")
             return [base + ".crt.der", base + ".key.der", base + ".chain.der.tar"]
-        return [host.replace(":", "-") + _suffix]
+        return [base + _suffix]
 
     return dump, load, stored_as
 
@@ -54,7 +56,7 @@ def _ondiskStoreFuncs(
 @overload
 def ondiskCredentialStore(
     directory: ValidPath, encoding: "Encoding|None" = None, password: str = None
-) -> FileCache[str, X509Credentials, X509Credentials]:
+) -> FileStore[str, X509Credentials, X509Credentials]:
     ...
 
 
@@ -66,7 +68,7 @@ def ondiskCredentialStore(
 ):
     dump, load, stored_as = _ondiskStoreFuncs(encoding, password, transform)
 
-    return FileCache[str, X509Credentials, T](
+    return FileStore[str, X509Credentials, T](
         directory, load=load, dump=dump, stored_as=stored_as
     )
 
@@ -74,7 +76,7 @@ def ondiskCredentialStore(
 @overload
 def ondiskPathStore(
     directory: ValidPath, encoding: "Encoding|None" = None, password: str = None
-) -> FileStorage[str, X509Credentials, X509Credentials]:
+) -> FilePathStore[str, X509Credentials, X509Credentials]:
     ...
 
 
@@ -85,7 +87,7 @@ def ondiskPathStore(
     transform: Transform[X509Credentials, T] = None,
 ):
     dump, load, stored_as = _ondiskStoreFuncs(encoding, password, transform)
-    return FileStorage[str, X509Credentials, T](
+    return FilePathStore[str, X509Credentials, T](
         directory, load=load, dump=dump, stored_as=stored_as
     )
 
