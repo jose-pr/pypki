@@ -41,11 +41,12 @@
             "default": "openssl_engine",
             "type": "pickString",
             "options": [
-                "openssl-engine",
-                "openssl-engine-capi",
+                "openssl_engine",
+                "openssl_engine_capi",
                 "certauth2",
                 "x509creds",
-                "sslcontext"
+                "sslcontext",
+                "sslcontext_factory"
               ]
         },
     ]

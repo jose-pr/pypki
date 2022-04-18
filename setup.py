@@ -68,7 +68,7 @@ def setup(**kwargs):
         author_email="jose-pr@coqui.dev",
         url=f"https://github.com/jose-pr/{root.resolve().name}",
         package_dir={"": "src"},
-        packages=[PKG, *pkgs],
+        packages=[PKG, *[f"{PKG}.{pkg}" for pkg in pkgs]],
         install_requires=(src / "requirements.txt").read_text().splitlines(),
         **kwargs,
     )
