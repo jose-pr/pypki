@@ -3,9 +3,14 @@ from importlib import import_module as _import
 from configparser import ConfigParser
 import re
 from sslcontext import SSLContextProvider
+from sslcontext.utils import set_sslcontext_defaults
+class DefaultSSLContextProvider(SSLContextProvider):
+    def sslcontext(self, protocol):
+        ctx = super().sslcontext(protocol)
+        set_sslcontext_defaults(ctx)        
+        return ctx
 
-
-DEFAULT_SSL_CONTEXT_PROVIDER:SSLContextProvider = SSLContextProvider
+DEFAULT_SSL_CONTEXT_PROVIDER:SSLContextProvider = DefaultSSLContextProvider()
 SSL_CONTEXT_PROVIDERS: 'dict[re.Pattern, SSLContextProvider]' = {}
 SSL_CONTEXT_PROVIDERS_LOAD_ERRORS: 'dict[str, Exception]' = {}
 
@@ -30,7 +35,7 @@ for _key, section in config.items():
                 kwargs[name[len("arg_") :]] = eval(arg)
         provider:SSLContextProvider = factory(*args, **kwargs)
     except Exception as e:
-        SSL_CONTEXT_PROVIDERS_LOAD_ERRORS[section] = e
+        SSL_CONTEXT_PROVIDERS_LOAD_ERRORS[_key] = e
         continue
 
     if _key == "DEFAULT":

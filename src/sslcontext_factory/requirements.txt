@@ -1,1 +1,1 @@
-sslcontext >= 1.2.1
+sslcontext >= 1.3.0

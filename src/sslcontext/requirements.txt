@@ -1,2 +1,3 @@
 idna; extra == 'idna'
 pyopenssl; extra == 'pyopenssl'
+wincertstore; extra == "windows-alt-default-certs"
