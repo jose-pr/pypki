@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Iterable
-
+from ._vendor.imports import SSLContext as NativeSSLContext, PyOpenSSLCtx
 if TYPE_CHECKING:
     from ssl import _SSLMethod as SSLMethod, Options, VerifyMode
     from socket import socket
-
+    import OpenSSL.SSL
 
 class SSLSocket(ABC):
     """API-compatibility interface for Python Connection-class.
@@ -110,22 +110,21 @@ class SSLContext(ABC):
     ) -> SSLSocket:
         ...
 
+    def pyopenssl(self) -> 'OpenSSL.SSL.Context':
+        """
+        May not be avialable but if it is it should return a OpenSSL.SSL.Context
+        """
 
 class SSLContextProvider(ABC):
     def sslcontext(self, protocol: "SSLMethod") -> SSLContext:
-        errs = []
-        try:
-            from ssl import SSLContext
-        except BaseException as e:
-            errs.append(e)
-            SSLContext = None
-        if SSLContext is None:
-            try:
-                from ._vendor.pyopenssl import PyOpenSSLContext as SSLContext
-            except BaseException as e:
-                errs.append(e)
-                pass
-        if SSLContext:
-            return SSLContext(protocol)
+        factory = None
+        if NativeSSLContext:
+            factory = NativeSSLContext
         else:
-            raise Exception("Could not load a module that provides a SSLContext", errs)
+            if PyOpenSSLCtx:
+                from ._vendor.pyopenssl import PyOpenSSLContext
+            factory = PyOpenSSLContext
+        if factory:
+            return factory(protocol)
+        else:
+            raise Exception("Could not load a module that provides a SSLContext")

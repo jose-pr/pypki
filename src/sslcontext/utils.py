@@ -6,16 +6,17 @@ import warnings
 if TYPE_CHECKING:
     from .interface import SSLContext
 from ._vendor.ssl import Purpose, VerifyMode
+from ._vendor.imports import SSLContext as NativeSSLContext, PyOpenSSLCtx
 
 if os.name == "nt":
     _windows_cert_stores = ("CA", "ROOT")
 
     try:
-        from ssl import enum_certificates as _wincerts
+        from ssl import enum_certificates
     except:
         import wincertstore as _store
 
-        def _wincerts(storename: str) -> "tuple[bytes, str, bool]":
+        def enum_certificates(storename: str) -> "tuple[bytes, str, bool|str]":
             store = _store.CertSystemStore(storename)
             try:
                 cert: _store.CERT_CONTEXT
@@ -31,7 +32,7 @@ if os.name == "nt":
         certs = bytearray()
         try:
             count = 0
-            for cert, encoding, trust in _wincerts(storename):
+            for cert, encoding, trust in enum_certificates(storename):
                 # CA certs are never PKCS#7 encoded
                 if encoding == "x509_asn":
                     if trust is True or purpose.oid in trust:
@@ -79,3 +80,13 @@ def set_sslcontext_defaults(
         if keylogfile and not sys.flags.ignore_environment:
             context.keylog_filename = keylogfile
     return context
+
+def is_pyopenssl(ctx: 'SSLContext'):
+    if PyOpenSSLCtx and hasattr(ctx, "pyopenssl") and isinstance(ctx.pyopenssl(), PyOpenSSLCtx):
+        return True
+    else:
+        return False
+
+def get_pyopenssl_ctx(sslcontext: 'SSLContext'):
+    if hasattr(sslcontext, "pyopenssl"):
+        return sslcontext.pyopenssl()

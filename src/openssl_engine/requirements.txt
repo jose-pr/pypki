@@ -1,3 +1,3 @@
 pyopenssl
 cryptography>=36
-sslcontext>=1.3.1; extra == "sslcontext"
+sslcontext>=1.4.0; extra == "sslcontext"

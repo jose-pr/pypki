@@ -347,7 +347,6 @@ class PyOpenSSLContext(SSLContext):
         self._ctx.set_cipher_list(ciphers)
 
     def load_verify_locations(self, cafile=None, capath=None, cadata=None):
-        import x509creds
         if cafile is not None:
             cafile = cafile.encode("utf-8")
         if capath is not None:
@@ -356,7 +355,13 @@ class PyOpenSSLContext(SSLContext):
             if capath or cafile:
                 self._ctx.load_verify_locations(cafile, capath)
             if cadata is not None:
-                _load_ca_certs(crypto.FILETYPE_ASN1, bytes(cadata), self._ctx)
+                if isinstance(cadata, str):
+                    data = cadata.encode("ascii")
+                    encoding = crypto.FILETYPE_PEM
+                else:
+                    data = bytes(cadata)
+                    encoding = crypto.FILETYPE_ASN1
+                _load_ca_certs(encoding, data, self._ctx)
         except OpenSSL.SSL.Error as e:
             raise SSLError("unable to load trusted certificates: %r" % e)
 
@@ -403,6 +408,9 @@ class PyOpenSSLContext(SSLContext):
 
         return PyOpenSSLSocket(cnx, sock)
 
+    def pyopenssl(self) -> "OpenSSL.SSL.Context":
+        return self._ctx
+
 
 def ensure_binary(s: str, encoding="utf-8", errors="strict"):
     if isinstance(s, bytes):
@@ -414,41 +422,9 @@ def ensure_binary(s: str, encoding="utf-8", errors="strict"):
 def _verify_callback(cnx, x509, err_no, err_depth, return_code):
     return err_no == 0
 
-def is_pyopenssl(ctx:object) -> TypeGuard[PyOpenSSLContext]:
-    if isinstance(ctx, SSLContext) and hasattr(ctx, "_ctx") and isinstance(ctx._ctx, OpenSSL.SSL.Context):
-        return True
-    else:
-        return False
 
-#taken from cpython impl to load cdata
-def _load_certs(type:int, buffer:bytes):
-    certs: 'list[crypto.X509]' = []
-    if isinstance(buffer, str):
-        buffer = buffer.encode("ascii")
-    bio = crypto._new_mem_buf(buffer)
-
-    while True:
-        try:
-            if type == crypto.FILETYPE_PEM:
-                x509 = crypto._lib.PEM_read_bio_X509(bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL)
-            elif type == crypto.FILETYPE_ASN1:
-                x509 = crypto._lib.d2i_X509_bio(bio, crypto._ffi.NULL)
-            else:
-                raise ValueError(
-                    "type argument must be FILETYPE_PEM or FILETYPE_ASN1")
-
-            if x509 == crypto._ffi.NULL:
-                crypto._raise_current_error()
-
-            cert =  crypto.X509._from_raw_x509_ptr(x509)
-            if not cert:
-                break
-            certs.append(cert)
-        except  crypto.Error as e:
-            break
-        return certs
-
-def _load_ca_certs(type:int, buffer:bytes, context:OpenSSL.SSL.Context):
+# adapted from cpython impl to load cdata
+def _load_ca_certs(type: int, buffer: bytes, context: OpenSSL.SSL.Context):
     if isinstance(buffer, str):
         buffer = buffer.encode("ascii")
     bio = crypto._new_mem_buf(buffer)
@@ -456,17 +432,18 @@ def _load_ca_certs(type:int, buffer:bytes, context:OpenSSL.SSL.Context):
     while True:
         try:
             if type == crypto.FILETYPE_PEM:
-                x509 = crypto._lib.PEM_read_bio_X509(bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL)
+                x509 = crypto._lib.PEM_read_bio_X509(
+                    bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL
+                )
             elif type == crypto.FILETYPE_ASN1:
                 x509 = crypto._lib.d2i_X509_bio(bio, crypto._ffi.NULL)
             else:
-                raise ValueError(
-                    "type argument must be FILETYPE_PEM or FILETYPE_ASN1")
+                raise ValueError("type argument must be FILETYPE_PEM or FILETYPE_ASN1")
 
             if x509 == crypto._ffi.NULL:
                 crypto._raise_current_error()
             crypto._lib.SSL_CTX_add_extra_chain_cert(context._context, x509)
             count += 1
-        except  crypto.Error as e:
+        except crypto.Error as e:
             break
     return count

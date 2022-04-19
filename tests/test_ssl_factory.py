@@ -1,6 +1,5 @@
 import importpatch
 from sslcontext_factory._extras import urllib3
-import ssl
 urllib3.inject()
 importpatch.inject()
 import urllib3

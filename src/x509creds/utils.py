@@ -46,16 +46,18 @@ from cryptography.hazmat.primitives.serialization import (
 from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
 from cryptography.x509 import Certificate, CertificateBuilder
 from cryptography.x509.oid import ExtendedKeyUsageOID
+
 from typing_extensions import TypeGuard as _TypeGuard
 from os import PathLike
 import tarfile as _tar
 
 if TYPE_CHECKING:
-    from OpenSSL import crypto as _crypto
+    from OpenSSL import crypto as _crypto, SSL as _SSL, _lib, _ffi, _new_mem_buf
     from sslcontext import SSLContext, is_pyopenssl
 else:
     try:
         from OpenSSL import crypto as _crypto, SSL as _SSL
+        from OpenSSL.crypto import _lib, _ffi, _new_mem_buf
 
         try:
             from sslcontext import is_pyopenssl
@@ -67,11 +69,34 @@ else:
                 else:
                     return False
 
-    except ImportError:
+    except ImportError as e:
         _crypto = None
 
         def is_pyopenssl(ctx):
             return False
+
+        from cryptography.hazmat.bindings.openssl.binding import Binding as _binding
+
+        _binding = _binding()
+        _ffi = _binding.ffi
+        _lib = _binding.lib
+
+        def _new_mem_buf(buffer=None):
+            # Code from Openssl.crypto
+            if buffer is None:
+                bio = _lib.BIO_new(_lib.BIO_s_mem())
+                free = _lib.BIO_free
+            else:
+                data = _ffi.new("char[]", buffer)
+                bio = _lib.BIO_new_mem_buf(data, len(buffer))
+
+                def free(bio, ref=data):
+                    return _lib.BIO_free(bio)
+
+            if bio == _ffi.NULL:
+                raise Exception("Something wrong")
+            bio = _ffi.gc(bio, free)
+            return bio
 
 
 ExtensionLike = Union[
@@ -309,6 +334,25 @@ def load_der(data: bytes, password: bytes = None):
         return _load_der_private_key(data, password)
 
 
+def load_der_certs(buffer: bytes):
+    bundle_bio = _new_mem_buf(buffer)
+    while True:
+        try:
+            _x509 = _lib.d2i_X509_bio(bundle_bio, _ffi.NULL)
+            if _x509 == _ffi.NULL:
+                break
+            cert_bio = _new_mem_buf()
+            if _lib.i2d_X509_bio(cert_bio, _x509) != 1:
+                break
+            cert_buffer = _ffi.new("char**")
+            cert_len = _lib.BIO_get_mem_data(cert_bio, cert_buffer)
+            yield x509.load_der_x509_certificate(
+                _ffi.buffer(cert_buffer[0], cert_len)[:]
+            )
+        except Exception as e:
+            break
+
+
 def dump_der_archive(file: BinaryIO, store: "Iterable[Certificate|PrivateKey]"):
     with _tar.open(fileobj=file, mode="w") as bundle:
         for i, cert_or_key in enumerate(store):
@@ -430,7 +474,7 @@ def iter_pem(pem: BinaryIO) -> Iterator[Tuple[str, bytes]]:
 
 def decode_pem(pem: "BinaryIO|bytes", password: PasswordLike = None):
     for section, data in iter_pem(_BytesIO(pem) if isinstance(pem, bytes) else pem):
-        if section == "CERTIFICATE":
+        if section == "CERTIFICATE" or section == "X509 CERTIFICATE":
             yield x509.load_pem_x509_certificate(data)
         elif "PRIVATE KEY" in section:
             yield _load_pem_private_key(data, password)
@@ -448,15 +492,12 @@ def load_certs(
     elif encoding is Encoding.PEM:
         certs = []
         for section, data in iter_pem(io):
-            if section == "CERTIFICATE":
+            if section == "CERTIFICATE" or section == "X509 CERTIFICATE":
                 certs.append(x509.load_pem_x509_certificate(data))
         return certs
     elif encoding is Encoding.DER:
-        return [
-            x509.load_der_x509_certificate(
-                io.read() if not isinstance(io, bytes) else io
-            )
-        ]
+        return list(load_der_certs(io.read() if not isinstance(io, bytes) else io))
+
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
@@ -473,7 +514,7 @@ def load_key_and_certificates(
         key = None
         certs = []
         for section, data in iter_pem(io):
-            if section == "CERTIFICATE":
+            if section == "CERTIFICATE" or section == "X509 CERTIFICATE":
                 certs.append(x509.load_pem_x509_certificate(data))
             elif "PRIVATE KEY" in section:
                 if key is None:
@@ -484,8 +525,20 @@ def load_key_and_certificates(
                 raise ValueError(f"Found unexpected section in PEM {section}")
         return key, certs[0], certs[1:]
     elif encoding is Encoding.DER:
-        found = load_der(io.read() if not isinstance(io, bytes) else io, password)
-        return None, found, [] if isinstance(found, Certificate) else found, None, []
+        data =io.read() if not isinstance(io, bytes) else io
+        certs = []
+        key = None
+        cert = None
+        try:
+            certs = list(load_der_certs(data))
+            if len(certs) ==  1:
+                cert = certs[0]
+                certs = []
+        except ValueError:
+            pass
+        if not certs:
+            key = _load_der_private_key(data, password)
+        return key, cert, certs
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
@@ -504,7 +557,11 @@ def decode(
     elif encoding is Encoding.PEM:
         yield from decode_pem(io, password)
     elif encoding is Encoding.DER:
-        yield load_der(io.read() if not isinstance(io, bytes) else io, password)
+        data =io.read() if not isinstance(io, bytes) else io
+        try:
+            _load_der_private_key(data, password)
+        except ValueError:
+            yield from load_der_certs(data)
     else:
         raise ValueError(f"Invalid encoding {encoding}")
 
