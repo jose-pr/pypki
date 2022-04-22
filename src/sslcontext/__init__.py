@@ -9,5 +9,5 @@ except ImportError:
     pass
 try:
     from ._vendor.pyopenssl import PyOpenSSLContext, PyOpenSSLSocket
-except ImportError:
+except ImportError as e:
     ...

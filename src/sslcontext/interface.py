@@ -3,13 +3,15 @@ from typing import TYPE_CHECKING, Iterable
 import sys
 import os
 from ._vendor.imports import SSLContext as NativeSSLContext, PyOpenSSLCtx
-from ._vendor import ssl  as _ssl
+from ._vendor import ssl as _ssl
 import warnings as _warnings
+from socket import socket as _socket
 
 if TYPE_CHECKING:
     from ssl import _SSLMethod as SSLMethod, Options, VerifyMode
     from socket import socket
     import OpenSSL.SSL
+
 
 class SSLSocket(ABC):
     """API-compatibility interface for Python Connection-class.
@@ -18,51 +20,53 @@ class SSLSocket(ABC):
     collector of pypy.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._io_refs: int = 0
+        self._closed = False
+
     @abstractmethod
     def fileno(self) -> int:
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def recv(self, bufsize: int, flags: int = ...) -> bytes:
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def recv_into(self, buffer, nbytes: int = ..., flags: int = ...) -> int:
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def settimeout(self, timeout: "float|None") -> None:
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def sendall(self, data, flags: int = ...) -> None:
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def shutdown(self):
-        ...
-
-    @abstractmethod
-    def close(self):
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def getpeercert(self, binary_form: bool = False) -> dict:
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
     def version(self):
-        ...
+        raise NotImplementedError()
 
     @abstractmethod
+    def _real_close(self):
+        ...
+
     def _reuse(self):
-        ...
-
-    @abstractmethod
-    def _drop(self):
-        ...
-
-    _makefile_refs: int
+        self._io_refs += 1
+        
+    _decref_socketios = _drop = _socket._decref_socketios
+    close = _socket.close
+    makefile = _socket.makefile
 
 
 class SSLContext(ABC):
@@ -110,7 +114,7 @@ class SSLContext(ABC):
     @abstractmethod
     def wrap_socket(
         self,
-        sock:'socket',
+        sock: "socket",
         server_side=False,
         do_handshake_on_connect=True,
         suppress_ragged_eofs=True,
@@ -142,10 +146,13 @@ class SSLContext(ABC):
                 self._load_windows_store_certs(storename, purpose)
         self.set_default_verify_paths()
 
-    def pyopenssl(self) -> 'OpenSSL.SSL.Context':
+    @property
+    def pyopenssl(self) -> "OpenSSL.SSL.Context|None":
         """
         May not be avialable but if it is it should return a OpenSSL.SSL.Context
         """
+        return None
+
 
 class SSLContextProvider(ABC):
     def sslcontext(self, protocol: "SSLMethod") -> SSLContext:

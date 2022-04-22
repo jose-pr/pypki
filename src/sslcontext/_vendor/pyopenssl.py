@@ -30,7 +30,6 @@ from io import BytesIO
 from socket import error as SocketError, socket
 from socket import timeout
 
-from .makefile import backport_makefile
 from .wait import wait_for_read, wait_for_write
 
 import logging
@@ -171,82 +170,68 @@ class PyOpenSSLSocket(SSLSocket):
     def __init__(
         self,
         connection: OpenSSL.SSL.Connection,
-        socket: socket,
         suppress_ragged_eofs=True,
     ):
         self.connection = connection
-        self.socket = socket
         self.suppress_ragged_eofs = suppress_ragged_eofs
-        self._makefile_refs = 0
-        self._closed = False
+        super().__init__()
 
-    def fileno(self):
-        return self.socket.fileno()
+    def _handle_read_err(self, e: OpenSSL.SSL.Error):
+        if isinstance(e, OpenSSL.SSL.SysCallError):
+            if not self.suppress_ragged_eofs and e.args == (-1, "Unexpected EOF"):
+                raise SocketError(str(e))
+        elif isinstance(e, OpenSSL.SSL.ZeroReturnError):
+            if not self.connection.get_shutdown() == OpenSSL.SSL.RECEIVED_SHUTDOWN:
+                raise
+        elif isinstance(e, OpenSSL.SSL.WantReadError):
+            if not wait_for_read(self, self.gettimeout()):
+                raise timeout("The read operation timed out")
+            else:
+                return True
+        elif isinstance(e, OpenSSL.SSL.WantWriteError):
+            if not wait_for_write(self, self.gettimeout()):
+                raise timeout()
+        else:
+            raise SSLError("read error: %r" % e)
 
-    # Copy-pasted from Python 3.5 source code
-    def _decref_socketios(self):
-        if self._makefile_refs > 0:
-            self._makefile_refs -= 1
-        if self._closed:
-            self.close()
+    def do_hanshake(self):
+        while True:
+            try:
+                self.connection.do_handshake()
+            except OpenSSL.SSL.WantReadError:
+                if not wait_for_read(self, self.gettimeout()):
+                    raise timeout("select timed out")
+                continue
+            except OpenSSL.SSL.Error as e:
+                raise SSLError("bad handshake: %r" % e)
+            break
 
     def recv(self, *args, **kwargs):
         try:
             data = self.connection.recv(*args, **kwargs)
-        except OpenSSL.SSL.SysCallError as e:
-            if self.suppress_ragged_eofs and e.args == (-1, "Unexpected EOF"):
-                return b""
-            else:
-                raise SocketError(str(e))
-        except OpenSSL.SSL.ZeroReturnError:
-            if self.connection.get_shutdown() == OpenSSL.SSL.RECEIVED_SHUTDOWN:
-                return b""
-            else:
-                raise
-        except OpenSSL.SSL.WantReadError:
-            if not wait_for_read(self.socket, self.socket.gettimeout()):
-                raise timeout("The read operation timed out")
-            else:
-                return self.recv(*args, **kwargs)
-
-        # TLS 1.3 post-handshake authentication
         except OpenSSL.SSL.Error as e:
-            raise SSLError("read error: %r" % e)
+            if self._handle_read_err(e):
+                return self.recv(*args, **kwargs)
+            else:
+                return b""
         else:
             return data
 
     def recv_into(self, *args, **kwargs):
         try:
             return self.connection.recv_into(*args, **kwargs)
-        except OpenSSL.SSL.SysCallError as e:
-            if self.suppress_ragged_eofs and e.args == (-1, "Unexpected EOF"):
-                return 0
-            else:
-                raise SocketError(str(e))
-        except OpenSSL.SSL.ZeroReturnError:
-            if self.connection.get_shutdown() == OpenSSL.SSL.RECEIVED_SHUTDOWN:
-                return 0
-            else:
-                raise
-        except OpenSSL.SSL.WantReadError:
-            if not wait_for_read(self.socket, self.socket.gettimeout()):
-                raise timeout("The read operation timed out")
-            else:
-                return self.recv_into(*args, **kwargs)
-
-        # TLS 1.3 post-handshake authentication
         except OpenSSL.SSL.Error as e:
-            raise SSLError("read error: %r" % e)
+            if self._handle_read_err(e):
+                return self.recv_into(*args, **kwargs)
+            else:
+                return 0
 
-    def settimeout(self, timeout):
-        return self.socket.settimeout(timeout)
-
-    def _send_until_done(self, data):
+    def _send(self, data):
         while True:
             try:
                 return self.connection.send(data)
             except OpenSSL.SSL.WantWriteError:
-                if not wait_for_write(self.socket, self.socket.gettimeout()):
+                if not wait_for_write(self, self.gettimeout()):
                     raise timeout()
                 continue
             except OpenSSL.SSL.SysCallError as e:
@@ -255,24 +240,8 @@ class PyOpenSSLSocket(SSLSocket):
     def sendall(self, data):
         total_sent = 0
         while total_sent < len(data):
-            sent = self._send_until_done(
-                data[total_sent : total_sent + SSL_WRITE_BLOCKSIZE]
-            )
+            sent = self._send(data[total_sent : total_sent + SSL_WRITE_BLOCKSIZE])
             total_sent += sent
-
-    def shutdown(self):
-        # FIXME rethrow compatible exceptions should we ever use this
-        self.connection.shutdown()
-
-    def close(self):
-        if self._makefile_refs < 1:
-            try:
-                self._closed = True
-                return self.connection.close()
-            except OpenSSL.SSL.Error:
-                return
-        else:
-            self._makefile_refs -= 1
 
     def getpeercert(self, binary_form=False):
         x509 = self.connection.get_peer_certificate()
@@ -291,19 +260,28 @@ class PyOpenSSLSocket(SSLSocket):
     def version(self):
         return self.connection.get_protocol_version_name()
 
-    def _reuse(self):
-        self._makefile_refs += 1
+    def __getattr__(self, name):
+        """
+        Look up attributes on the wrapped socket object if they are not found
+        on the Connection object.
+        """
+        return getattr(self.connection, name)
 
-    def _drop(self):
-        if self._makefile_refs < 1:
-            self.close()
-        else:
-            self._makefile_refs -= 1
+    def _real_close(self):
+        return self.connection.close()
 
+    def fileno(self) -> int:
+        self.connection.fileno()
 
-# makefile = backport_makefile
+    def settimeout(self, timeout: "float|None") -> None:
+        self.connection.settimeout(timeout)
 
-PyOpenSSLSocket.makefile = backport_makefile
+    def sendall(self, data, flags: int = ...) -> None:
+        self.connection.sendall(data, flags)
+
+    def shutdown(self):
+        self.connection.shutdown()
+
 
 from ..interface import SSLContext
 
@@ -393,21 +371,18 @@ class PyOpenSSLContext(SSLContext):
         if server_hostname is not None:
             cnx.set_tlsext_host_name(server_hostname)
 
-        cnx.set_connect_state()
+        if server_side:
+            cnx.set_accept_state()
+        else:
+            cnx.set_connect_state()
 
-        while True:
-            try:
-                cnx.do_handshake()
-            except OpenSSL.SSL.WantReadError:
-                if not wait_for_read(sock, sock.gettimeout()):
-                    raise timeout("select timed out")
-                continue
-            except OpenSSL.SSL.Error as e:
-                raise SSLError("bad handshake: %r" % e)
-            break
+        socket = PyOpenSSLSocket(cnx, suppress_ragged_eofs)
+        if do_handshake_on_connect:
+            socket.do_hanshake()
 
-        return PyOpenSSLSocket(cnx, sock)
+        return socket
 
+    @property
     def pyopenssl(self) -> "OpenSSL.SSL.Context":
         return self._ctx
 

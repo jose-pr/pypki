@@ -3,24 +3,16 @@ try:
     from OpenSSL.crypto import _lib, _ffi, _new_mem_buf
 
     try:
-        from sslcontext.utils import is_pyopenssl, get_pyopenssl_ctx
+        from sslcontext.utils import get_pyopenssl_ctx
     except:
-        def get_pyopenssl_ctx(ctx) -> '_SSL.Context|None' :
+
+        def get_pyopenssl_ctx(ctx) -> "_SSL.Context|None":
             ctx = getattr(ctx, "_ctx", None)
             return ctx if isinstance(ctx, _SSL.Context) else None
-            
-        def is_pyopenssl(ctx):
-            if hasattr(ctx, "_ctx") and isinstance(ctx._ctx, _SSL.Context):
-                return True
-            else:
-                return False
 
 except ImportError as e:
     _crypto = None
 
-    def is_pyopenssl(ctx):
-        return False
-    
     def get_pyopenssl_ctx(ctx):
         return None
 

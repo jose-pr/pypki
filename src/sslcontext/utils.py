@@ -45,6 +45,6 @@ def is_pyopenssl(ctx: "SSLContext"):
 
 def get_pyopenssl_ctx(sslcontext: "SSLContext") -> "PyOpenSSLCtx|None":
     if hasattr(sslcontext, "pyopenssl"):
-        return sslcontext.pyopenssl()
+        return sslcontext.pyopenssl
     elif hasattr(sslcontext, "_ctx"):
         return sslcontext._ctx
