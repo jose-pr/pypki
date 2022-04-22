@@ -10,6 +10,7 @@ from ssl import enum_certificates, PROTOCOL_TLS
 from OpenSSL import crypto
 from x509creds import Certificate
 
+TRUSTED_STORES = SSLContext._windows_cert_stores
 
 def test_create_engine():
     CAPIEngine()
@@ -67,7 +68,7 @@ def test_ssl_socket():
     # Simple Socker with context
     ctx = PyOpenSSLContext(PROTOCOL_TLS)
     engine = CAPIEngine()
-    set_client_cert_engine(ctx.pyopenssl(), engine)
+    set_client_cert_engine(ctx.pyopenssl, engine)
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect(PKI_HOST)
     s = ctx.wrap_socket(s)
