@@ -24,13 +24,13 @@
         {
             "label": "Publish",
             "type": "shell",
-            "command": "python -m  twine upload -r pypi ./dist/${input:pkg}/*",
+            "command": "python -m  twine upload --verbose -r pypi ./dist/${input:pkg}/*",
             "problemMatcher":[]
         },
         {
             "label": "Publish All",
             "type": "shell",
-            "command": "python -m  twine upload -r pypi ./dist/*/*",
+            "command": "python -m  twine upload  --verbose -r pypi ./dist/*/*",
             "problemMatcher":[]
         }
     ],
@@ -47,7 +47,7 @@
                 "x509creds",
                 "sslcontext",
                 "sslcontext_factory",
-                "yaproxy",
+                "proxylib",
                 "netproxy", 
                 "requests_extended"
               ]
