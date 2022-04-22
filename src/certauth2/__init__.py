@@ -13,8 +13,10 @@ from x509creds import (
     PrivateKey,
     HashAlgorithm,
     ValidPath,
+    DatetimeRef,
     IPAddress,
 )
+from x509creds.encoding import encoding_from_suffix
 from datetime import datetime, timedelta
 
 from x509creds.utils import parse_sans
@@ -42,8 +44,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         self,
         credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
         store: "int|ValidPath|None" = None,
-        cert_not_before: "timedelta|int|datetime" = None,
-        cert_not_after: "timedelta|int|datetime" = None,
+        cert_not_before: DatetimeRef = None,
+        cert_not_after: DatetimeRef = None,
         hash: "HashAlgorithm|None" = None,
         verify_tld: bool = True,
         domain_cert: bool = False,
@@ -55,8 +57,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         self,
         credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
         store: "CredentialsStore[T]" = None,
-        cert_not_before: "timedelta|int|datetime" = None,
-        cert_not_after: "timedelta|int|datetime" = None,
+        cert_not_before: DatetimeRef = None,
+        cert_not_after: DatetimeRef = None,
         hash: "HashAlgorithm|None" = None,
         verify_tld: bool = True,
         domain_cert: bool = False,
@@ -70,8 +72,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         self,
         credentials: "X509Credentials|ValidPath|tuple[ValidPath, str|None, str|None]",
         store: "CredentialsStore[T]|int|ValidPath|None" = None,
-        cert_not_before: "timedelta|int|datetime" = None,
-        cert_not_after: "timedelta|int|datetime" = None,
+        cert_not_before: DatetimeRef = None,
+        cert_not_after: DatetimeRef = None,
         hash: "HashAlgorithm|None" = None,
         verify_tld: bool = True,
         domain_cert: bool = False,
@@ -89,7 +91,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
             path = Path(credentials[0])
             name = credentials[1]
             password = credentials[2]
-            encoding = Encoding.from_suffix(path.suffix)
+            encoding = encoding_from_suffix(path.suffix)
 
             if path.exists():
                 credentials = X509Credentials.load((path, encoding, password))
@@ -163,8 +165,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         subject: "x509.Name|str",
         key: "PublicKey" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: Iterable[x509.Extension] = None,
         key_usage: "dict[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -178,8 +180,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         subject: "x509.Name|str",
         key: "PrivateKey|int|None" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: Iterable[x509.Extension] = None,
         key_usage: "dict[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -192,8 +194,8 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         subject: "x509.Name|str",
         key: "PrivateKey|PublicKey|int|None" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: Iterable[x509.Extension] = None,
         key_usage: "dict[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,

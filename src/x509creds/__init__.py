@@ -7,7 +7,6 @@ from typing import (
     Iterable as _Iter,
     Mapping as _Mapping,
 )
-from datetime import datetime, timedelta
 
 import tempfile as _tmp
 import os as _os
@@ -22,7 +21,9 @@ from .encoding import (
     pkcs12 as _pkcs12,
     _Encoding,
     Encoded,
+    PasswordLike
 )
+from .encoding._decoders import ValidPath
 from ._models import _X509Credentials, _X509Identity
 from .utils import (
     CertPurpose,
@@ -31,6 +32,8 @@ from .utils import (
     cert_builder,
     generate_certificate,
     is_public_key,
+    DatetimeRef,
+    _IPAddress as IPAddress
 )
 
 if TYPE_CHECKING:
@@ -50,8 +53,8 @@ class X509Issuer(_ABC):
         subject: "x509.Name|str",
         key: "PrivateKey|int|None" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: _Iter[ExtensionLike] = None,
         key_usage: "_Mapping[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -65,8 +68,8 @@ class X509Issuer(_ABC):
         subject: "x509.Name|str",
         key: "PublicKey" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: "_Iter[ExtensionLike]" = None,
         key_usage: "_Mapping[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -79,8 +82,8 @@ class X509Issuer(_ABC):
         subject: "x509.Name|str",
         key: "PrivateKey|PublicKey|int|None" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: _Iter[ExtensionLike] = None,
         key_usage: "_Mapping[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -137,8 +140,8 @@ class X509Identity(_X509Identity):
         key: "PublicKey|PrivateKey" = None,
         issuer: "X509Issuer|None" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: _Iter[ExtensionLike] = None,
         key_usage: "_Mapping[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -246,8 +249,8 @@ class X509Credentials(_X509Credentials, X509Issuer):
         key: "PrivateKey|int|None" = None,
         issuer: "X509Issuer|None" = None,
         purpose: CertPurpose = None,
-        not_before: "datetime|int|timedelta" = None,
-        not_after: "datetime|int|timedelta" = None,
+        not_before: DatetimeRef = None,
+        not_after: DatetimeRef = None,
         extensions: _Iter[ExtensionLike] = None,
         key_usage: "_Mapping[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
@@ -359,7 +362,7 @@ def load_creds(*stores: Encoded):
                 if cert is None:
                     cert = decoded
                 else:
-                    chain.append(cert)
+                    chain.append(decoded)
             else:
                 if key is None:
                     key = decoded
@@ -375,8 +378,8 @@ def create_creds(
     key: "PrivateKey|int|None" = None,
     issuer: "X509Issuer|None" = None,
     purpose: CertPurpose = None,
-    not_before: "datetime|int|timedelta" = None,
-    not_after: "datetime|int|timedelta" = None,
+    not_before: DatetimeRef = None,
+    not_after: DatetimeRef = None,
     extensions: _Iter[ExtensionLike] = None,
     key_usage: "_Mapping[KeyUsage,bool]" = None,
     ext_key_usage: "list" = None,
@@ -391,8 +394,8 @@ def create_creds(
     key: "PublicKey" = None,
     issuer: "X509Issuer|None" = None,
     purpose: CertPurpose = None,
-    not_before: "datetime|int|timedelta" = None,
-    not_after: "datetime|int|timedelta" = None,
+    not_before: DatetimeRef = None,
+    not_after: DatetimeRef = None,
     extensions: _Iter[ExtensionLike] = None,
     key_usage: "_Mapping[KeyUsage,bool]" = None,
     ext_key_usage: "list" = None,
@@ -406,8 +409,8 @@ def create_creds(
     key: "PrivateKey|PublicKey|int|None" = None,
     issuer: "X509Issuer|None" = None,
     purpose: CertPurpose = None,
-    not_before: "datetime|int|timedelta" = None,
-    not_after: "datetime|int|timedelta" = None,
+    not_before: DatetimeRef = None,
+    not_after: DatetimeRef = None,
     extensions: _Iter[ExtensionLike] = None,
     key_usage: "_Mapping[KeyUsage,bool]" = None,
     ext_key_usage: "list" = None,

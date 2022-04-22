@@ -39,11 +39,6 @@ class EncodedIO(_ABC):
         else:
             return EncodedBytesIO(encoded)
 
-    @classmethod
-    @_method
-    def new(cls, encoded: Encoded) -> "EncodedIO":
-        ...
-
     def read_bytes(self) -> bytes:
         with self.open() as bin:
             return bin.read()
@@ -83,7 +78,6 @@ class EncodedBytesIO(EncodedIO):
 class EncodedFileIO(EncodedIO):
     path: Path
 
-    @classmethod
     def __new__(cls, encoded: EncodedFile):
         inst = object.__new__(cls)
 

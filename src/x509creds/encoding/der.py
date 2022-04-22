@@ -18,9 +18,9 @@ load_key = _cast(_Func[[bytes, "bytes|None"], PrivateKey], _load_der_private_key
 
 def load(data: bytes, password: bytes = None):
     try:
-        yield from load_certs(data)
-    except ValueError:
         yield load_key(data, password)
+    except ValueError:
+        yield from load_certs(data)
 
 
 def load_certs(data: bytes) -> _Iter[Certificate]:
@@ -44,10 +44,12 @@ def dump_key(key: PrivateKey, password: "bytes|None" = None):
         _Encryption(password) if password else _NoEncryption(),
     )
 
+
 def dump_cert(
     cert: "Certificate|None" = None,
 ):
     return cert.public_bytes(_Encoding.DER)
+
 
 def dump(
     key: "PrivateKey|None" = None,
@@ -57,6 +59,6 @@ def dump(
 ):
     return (
         dump_key(key, password) if key else bytes(),
-        cert.public_bytes(_Encoding.PEM) if cert else bytes(),
-        [ca.public_bytes(_Encoding.PEM) for ca in chain or []],
+        cert.public_bytes(_Encoding.DER) if cert else bytes(),
+        [ca.public_bytes(_Encoding.DER) for ca in chain or []],
     )

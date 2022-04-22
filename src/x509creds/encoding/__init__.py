@@ -10,6 +10,7 @@ from ._decoders import (
     Encoded,
     EncodedIO, 
     _ENCODING_SUFFIX_MAP,
+    encoding_from_suffix
 )
 from .._vendor.crypto import *
 
@@ -136,12 +137,12 @@ class X509EncodedStore:
 
 
     @property
-    def encoding(self) -> bytes:
-        self.io.encoding
+    def encoding(self) -> Encoding:
+        return self.io.encoding
 
     @property
     def password(self) -> PasswordLike:
-        self.io.password
+        return self.io.password
    
     def __iter__(self):
         with self.io as io:

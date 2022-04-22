@@ -4,7 +4,7 @@ try:
 except ImportError:
     _tld = None
 
-from x509creds import into_ip
+from x509creds.utils import into_ip
 
 def is_ip(ip:str):
     return into_ip(ip) is not None

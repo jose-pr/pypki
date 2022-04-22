@@ -22,6 +22,7 @@ from ipaddress import ip_address as _ip, IPv4Address as _ipv4, IPv6Address as _i
 from ._vendor.crypto import *
 from ._models import _X509Credentials, _X509Identity
 
+DatetimeRef: _Alias = "timedelta|int|datetime"
 ExtensionLike: _Alias = (
     "Extension| tuple[ExtensionType, bool]|tuple[ObjectIdentifier, ExtensionType, bool]"
 )
@@ -36,7 +37,7 @@ KeyUsage = _Literal[
     "encipher_only",
     "decipher_only",
 ]
-_IPAddress: _Alias = "tuple[_ipv4, _ipv6]"
+_IPAddress: _Alias = "_ipv4|_ipv6"
 
 DEF_KEY_SIZE = 2048
 DEF_PUBLIC_EXPONENT = 65537
@@ -91,8 +92,8 @@ def cert_builder(
     subject: "x509.Name|str",
     key: "int|None" = None,
     purpose: CertPurpose = None,
-    not_before: "datetime|int|timedelta" = None,
-    not_after: "datetime|int|timedelta" = None,
+    not_before: DatetimeRef = None,
+    not_after: DatetimeRef = None,
     extensions: _Iter[ExtensionLike] = None,
     key_usage: "dict[KeyUsage,bool]" = None,
     ext_key_usage: "list" = None,
@@ -105,8 +106,8 @@ def cert_builder(
     subject: "x509.Name|str",
     key: "PrivateKey|PublicKey" = None,
     purpose: CertPurpose = None,
-    not_before: "datetime|int|timedelta" = None,
-    not_after: "datetime|int|timedelta" = None,
+    not_before: DatetimeRef = None,
+    not_after: DatetimeRef = None,
     extensions: _Iter[ExtensionLike] = None,
     key_usage: "dict[KeyUsage,bool]" = None,
     ext_key_usage: "list" = None,
@@ -118,8 +119,8 @@ def cert_builder(
     subject: "x509.Name|str",
     key: "PrivateKey|PublicKey|int|None" = None,
     purpose: CertPurpose = None,
-    not_before: "datetime|int|timedelta" = None,
-    not_after: "datetime|int|timedelta" = None,
+    not_before: DatetimeRef = None,
+    not_after: DatetimeRef = None,
     extensions: _Iter[ExtensionLike] = None,
     key_usage: "dict[KeyUsage,bool]" = None,
     ext_key_usage: "list" = None,
