@@ -85,7 +85,7 @@ class FdOutputGrabber(object):
         self,
         fd: "int | None" = None,
         escape_seq: "bytes | None" = None,
-        timeout: float = 5,
+        timeout: float = .1,
         read_chunk: int = 4096,
     ):
         self.captured: bytes = b""

@@ -7,7 +7,7 @@ from ._vendor import ssl  as _ssl
 import warnings as _warnings
 
 if TYPE_CHECKING:
-    from ssl import _SSLMethod as SSLMethod, Options
+    from ssl import _SSLMethod as SSLMethod, Options, VerifyMode
     from socket import socket
     import OpenSSL.SSL
 
@@ -93,7 +93,7 @@ class SSLContext(ABC):
         self,
         cafile: "str|None" = None,
         capath: "str|None" = None,
-        cadata: "str|None" = None,
+        cadata: "bytes|str|None" = None,
     ):
         ...
 

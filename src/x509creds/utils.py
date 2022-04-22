@@ -18,6 +18,7 @@ from enum import IntFlag as _IntFlag
 from datetime import timedelta, datetime
 
 from ipaddress import ip_address as _ip, IPv4Address as _ipv4, IPv6Address as _ipv6
+import os as _os
 
 from ._vendor.crypto import *
 from ._models import _X509Credentials, _X509Identity
