@@ -1,22 +1,28 @@
-import os
-from typing import Literal, overload
-from OpenSSL.SSL import Context as SSLContext, _ffi, _lib
-from .utils import FdOutputGrabber
+import os as _os
+from typing import Literal as _Literal, overload as _overload
+from OpenSSL.SSL import Context as _Context, _ffi, _lib
+from .utils import FdOutputGrabber as _FdOutputGrabber
 
 _NULL = _ffi.NULL
 
-TRUSTED_STORES = ["ROOT", "CA"]
+class SSLEngineError(Exception):
+    ...
 
+class CommandFailed(SSLEngineError):
+    ...
+
+class FailedToLoadEngine(SSLEngineError):
+    ...
 
 class SSLEngine:
     def __init__(self, id: "str | _ffi.CData | SSLEngine") -> None:
         if isinstance(id, str):
             try:
                 eng = SSLEngine.load_by_id(id)
-            except Exception:
+            except FailedToLoadEngine:
                 try:
                     eng = SSLEngine.load_dynamic(id)
-                except Exception:
+                except FailedToLoadEngine:
                     eng = SSLEngine.load_dynamic(id, path=id)
             ptr = eng.ptr
         elif isinstance(id, SSLEngine):
@@ -29,7 +35,7 @@ class SSLEngine:
     def init(self):
         if not _lib.ENGINE_init(self.ptr):
             #            _lib.ENGINE_free(self.ptr)
-            raise Exception("Could not initialize engine")
+            raise SSLEngineError("Could not initialize engine")
 
     def fisnish(self):
         _lib.ENGINE_finish(self.ptr)
@@ -41,22 +47,26 @@ class SSLEngine:
     def __exit__(self, type, value, traceback):
         self.fisnish()
 
-    @overload
+    @_overload
     def ctrl_cmd_string(
         self,
         cmd: str,
         value: "str | None" = None,
         optional: bool = False,
-        capture: Literal[False] = False,
-    ) -> None: ...
-    @overload
+        capture: _Literal[False] = False,
+    ) -> None:
+        ...
+
+    @_overload
     def ctrl_cmd_string(
         self,
         cmd: str,
         value: "str | None" = None,
         optional: bool = False,
-        capture: Literal[True] = False,
-    ) -> bytes: ...
+        capture: _Literal[True] = False,
+    ) -> bytes:
+        ...
+
     def ctrl_cmd_string(
         self,
         cmd: str,
@@ -66,7 +76,7 @@ class SSLEngine:
     ) -> "None | bytes":
 
         if capture:
-            capture: FdOutputGrabber = FdOutputGrabber("stdout")
+            capture: _FdOutputGrabber = _FdOutputGrabber("stdout")
             capture.start()
 
         if not _lib.ENGINE_ctrl_cmd_string(
@@ -77,7 +87,7 @@ class SSLEngine:
         ):
             if capture:
                 capture.stop()
-            raise Exception(
+            raise CommandFailed(
                 "Error with engine string control command: %s%s"
                 % (cmd, "" if value == None else ":" + value)
             )
@@ -91,7 +101,7 @@ class SSLEngine:
         _lib.ENGINE_load_builtin_engines()
         ptr = _lib.ENGINE_by_id(id.encode())
         if ptr == _NULL:
-            raise ValueError("Could not load the {0} engine by id".format(id))
+            raise FailedToLoadEngine("Could not load the {0} engine by id".format(id))
         ptr = _ffi.gc(ptr, _lib.ENGINE_free)
         engine = SSLEngine(ptr)
         return engine
@@ -117,20 +127,22 @@ class SSLEngine:
         if not check_version:
             dyn.ctrl_cmd_string("NO_VCHECK", 1)
 
-        if search_path == None and path == None and "OPENSSL_ENGINES" in os.environ:
-            search_path = os.environ["OPENSSL_ENGINES"]
+        if search_path == None and path == None and "OPENSSL_ENGINES" in _os.environ:
+            search_path = _os.environ["OPENSSL_ENGINES"]
 
         if search_path:
             dyn.ctrl_cmd_string("DIR_LOAD", 2)
             dyn.ctrl_cmd_string("DIR_ADD", search_path)
-
-        dyn.ctrl_cmd_string("LOAD")
+        try:
+            dyn.ctrl_cmd_string("LOAD")
+        except CommandFailed:
+            raise FailedToLoadEngine(id, path, search_path, check_version)
         return dyn
 
 
-def set_client_cert_engine(self: SSLContext, engine: "_ffi.CData | SSLEngine | str"):
+def set_client_cert_engine(self: _Context, engine: "_ffi.CData | SSLEngine | str"):
     if not _lib.SSL_CTX_set_client_cert_engine(self._context, SSLEngine(engine).ptr):
-        raise Exception("Was not able to set client cert engine")
+        raise SSLEngineError("Was not able to set client cert engine")
 
 
-SSLContext.set_client_cert_engine = set_client_cert_engine
+_Context.set_client_cert_engine = set_client_cert_engine
