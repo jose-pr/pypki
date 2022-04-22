@@ -1,4 +1,5 @@
 import os
+from typing import Literal, overload
 from OpenSSL.SSL import Context as SSLContext, _ffi, _lib
 from .utils import FdOutputGrabber
 
@@ -40,6 +41,22 @@ class SSLEngine:
     def __exit__(self, type, value, traceback):
         self.fisnish()
 
+    @overload
+    def ctrl_cmd_string(
+        self,
+        cmd: str,
+        value: "str | None" = None,
+        optional: bool = False,
+        capture: Literal[False] = False,
+    ) -> None: ...
+    @overload
+    def ctrl_cmd_string(
+        self,
+        cmd: str,
+        value: "str | None" = None,
+        optional: bool = False,
+        capture: Literal[True] = False,
+    ) -> bytes: ...
     def ctrl_cmd_string(
         self,
         cmd: str,
