@@ -78,7 +78,7 @@ def main(args=None):
         overwrite=overwrite,
         sans=sans,
     )
-    if ca._modified:
+    if ca._last_creds_new:
         print(f'Created new cert "{ hostname }" signed by {issuer}')
         return 0
 

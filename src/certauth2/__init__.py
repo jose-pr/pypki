@@ -7,7 +7,7 @@ from x509creds import (
     X509Credentials,
     Encoding,
     X509Issuer,
-    X509PublicCredentials,
+    X509Identity,
     x509,
     PublicKey,
     PrivateKey,
@@ -49,6 +49,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         domain_cert: bool = False,
     ) -> "CertificateAuthority[X509Credentials]":
         ...
+
     @overload
     def __new__(
         self,
@@ -78,15 +79,15 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         self.hash = hash
         self.cert_not_before = cert_not_before
         self.cert_not_after = cert_not_after
-        self._ca_created = self._modified = False
+        self._ca_created = self._last_creds_new = False
         self.verify_tld = verify_tld
         self.domain_cert = domain_cert
 
-        if isinstance(credentials, str):
+        if isinstance(credentials, (str, PathLike)):
             credentials = (credentials, None, None)
-        if isinstance(credentials[0], str):
+        if isinstance(credentials[0], (str, PathLike)):
             path = Path(credentials[0])
-            name = credentials[1] if credentials[1] else path.stem
+            name = credentials[1]
             password = credentials[2]
             encoding = Encoding.from_suffix(path.suffix)
 
@@ -94,7 +95,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
                 credentials = X509Credentials.load((path, encoding, password))
             else:
                 credentials = X509Credentials.create(
-                    name,
+                    name or path.stem,
                     purpose=CertPurpose.CA,
                     not_before=self.cert_not_before,
                     not_after=self.cert_not_after,
@@ -104,7 +105,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
                 self._ca_created = True
 
             if (
-                credentials[1]
+                name
                 and credentials.cert.subject.get_attributes_for_oid(
                     x509.NameOID.COMMON_NAME
                 )[0].value
@@ -144,12 +145,12 @@ class CertificateAuthority(X509Issuer, Generic[T]):
 
         if not creds:
             sans = [host, *(sans or [])]
-            self._modified = True
+            self._last_creds_new = True
             creds = self.generate_host_creds(host, sans=sans, **builder_kargs)
             self.store[host] = creds
             creds = self.store[host]
         else:
-            self._modified = False
+            self._last_creds_new = False
 
         return creds
 
@@ -168,7 +169,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         key_usage: "dict[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
         hash_alg: HashAlgorithm = None,
-    ) -> "X509PublicCredentials":
+    ) -> "X509Identity":
         ...
 
     @overload
@@ -197,7 +198,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         key_usage: "dict[KeyUsage,bool]" = None,
         ext_key_usage: "list" = None,
         hash_alg: HashAlgorithm = None,
-    ) -> "X509Credentials|X509PublicCredentials":
+    ) -> "X509Credentials|X509Identity":
         return super().generate(
             subject,
             key,
@@ -217,7 +218,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
         sans: "Iterable[str|IPAddress]|None" = None,
         key: "PublicKey" = None,
         **builder_kargs
-    ) -> "X509PublicCredentials":
+    ) -> "X509Identity":
         ...
 
     def generate_host_creds(
@@ -235,7 +236,7 @@ class CertificateAuthority(X509Issuer, Generic[T]):
     def __getitem__(self, host: "str|dict"):
         if isinstance(host, str):
             return self.load_creds(host)
-        elif isinstance(host, Mapping):
+        elif isinstance(host, Mapping) and "host" in host:
             return self.load_creds(**host)
         else:
             raise KeyError(host)
