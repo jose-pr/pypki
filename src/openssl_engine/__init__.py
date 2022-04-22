@@ -6,6 +6,7 @@ _NULL = _ffi.NULL
 
 TRUSTED_STORES = ["ROOT", "CA"]
 
+
 class SSLEngine:
     def __init__(self, id: "str | _ffi.CData | SSLEngine") -> None:
         if isinstance(id, str):
@@ -26,18 +27,18 @@ class SSLEngine:
 
     def init(self):
         if not _lib.ENGINE_init(self.ptr):
-            self.__exit__()
+            #            _lib.ENGINE_free(self.ptr)
             raise Exception("Could not initialize engine")
 
-    def free(self):
-        _lib.ENGINE_free(self.ptr)
+    def fisnish(self):
+        _lib.ENGINE_finish(self.ptr)
 
     def __enter__(self):
         self.init()
         return self
 
     def __exit__(self, type, value, traceback):
-        self.free()
+        self.fisnish()
 
     def ctrl_cmd_string(
         self,
@@ -74,7 +75,9 @@ class SSLEngine:
         ptr = _lib.ENGINE_by_id(id.encode())
         if ptr == _NULL:
             raise ValueError("Could not load the {0} engine by id".format(id))
-        return SSLEngine(ptr)
+        ptr = _ffi.gc(ptr, _lib.ENGINE_free)
+        engine = SSLEngine(ptr)
+        return engine
 
     def load_dynamic(
         id: str,

@@ -425,25 +425,25 @@ def _verify_callback(cnx, x509, err_no, err_depth, return_code):
 
 # adapted from cpython impl to load cdata
 def _load_ca_certs(type: int, buffer: bytes, context: OpenSSL.SSL.Context):
-    if isinstance(buffer, str):
-        buffer = buffer.encode("ascii")
     bio = crypto._new_mem_buf(buffer)
+    store = crypto._lib.SSL_CTX_get_cert_store(context._context)
+    if store == crypto._ffi.NULL:
+        raise Exception("Could not load store for OpenSSL.SSL.Context")
     count = 0
     while True:
-        try:
-            if type == crypto.FILETYPE_PEM:
-                x509 = crypto._lib.PEM_read_bio_X509(
-                    bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL
-                )
-            elif type == crypto.FILETYPE_ASN1:
-                x509 = crypto._lib.d2i_X509_bio(bio, crypto._ffi.NULL)
-            else:
-                raise ValueError("type argument must be FILETYPE_PEM or FILETYPE_ASN1")
+        if type == crypto.FILETYPE_PEM:
+            x509 = crypto._lib.PEM_read_bio_X509(
+                bio, crypto._ffi.NULL, crypto._ffi.NULL, crypto._ffi.NULL
+            )
+        elif type == crypto.FILETYPE_ASN1:
+            x509 = crypto._lib.d2i_X509_bio(bio, crypto._ffi.NULL)
+        else:
+            raise ValueError("type argument must be FILETYPE_PEM or FILETYPE_ASN1")
 
-            if x509 == crypto._ffi.NULL:
-                crypto._raise_current_error()
-            crypto._lib.SSL_CTX_add_extra_chain_cert(context._context, x509)
-            count += 1
-        except crypto.Error as e:
+        if x509 == crypto._ffi.NULL:
             break
+        count += 1
+        if not crypto._lib.X509_STORE_add_cert(store, x509):
+            raise Exception(f"Could not cert #{count} to the store")
+        crypto._lib.X509_free(x509)
     return count

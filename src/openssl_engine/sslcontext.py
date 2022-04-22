@@ -1,5 +1,5 @@
 from sslcontext import PyOpenSSLContext, SSLContextProvider, SSLContext
-from sslcontext.utils import load_default_certs, get_pyopenssl_ctx
+from sslcontext.utils import get_pyopenssl_ctx
 from . import SSLEngine, set_client_cert_engine
 
 
@@ -13,7 +13,7 @@ class EngineSSLContextProvider(SSLContextProvider):
         ctx = PyOpenSSLContext(protocol)
         set_client_cert_engine(ctx._ctx, self.engine)
         if self.use_defaults:
-            load_default_certs(ctx)
+           ctx.load_default_certs()
         return ctx
 
     def apply_to_context(self, context: SSLContext):
