@@ -42,12 +42,14 @@ def test_root_certificate(encoding:Encoding, root_ca_suffix:str):
 
 def test_load_creds(encoding:Encoding):
     ca = get_ca(encoding, "pem")
-    cert = ca.load_creds("example.com", overwrite=True)
+    creds = ca.load_creds("example.com", overwrite=True)
     cp = ca["example.com"]
-    assert cert.cert == cp.cert
-    assert "example.com" in cert.cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.DNSName)
-    assert x509.OID_SERVER_AUTH in cert.cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
-    assert x509.OID_CLIENT_AUTH in cert.cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    assert creds.cert == cp.cert
+    cp = ca[{"host":"example.com"}]
+    assert creds.cert == cp.cert
+    assert "example.com" in creds.cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.DNSName)
+    assert x509.OID_SERVER_AUTH in creds.cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    assert x509.OID_CLIENT_AUTH in creds.cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
 
 
 if __name__ == "__main__":

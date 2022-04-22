@@ -46,7 +46,10 @@
                 "certauth2",
                 "x509creds",
                 "sslcontext",
-                "sslcontext_factory"
+                "sslcontext_factory",
+                "yaproxy",
+                "netproxy", 
+                "requests_extended"
               ]
         },
     ]
