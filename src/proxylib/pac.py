@@ -9,8 +9,11 @@ import socket as _socket
 import ipaddress as _ip
 from fnmatch import fnmatch as _shexpmatch
 import datetime as _datetime
+from urllib.request import urlopen as _urlopen
+from warnings import warn as _warn
 from ._models import ProxyMap, Proxy
 from ._re import _PAC_REGEX, _URI_REGEX
+
 
 _WEEKDAY = _Literal["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
 _WEEKDAYS = ("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
@@ -132,3 +135,24 @@ class PAC(ProxyMap):
             f"{scheme}://{host}{f':{port}' if port else ''}", host
         )
         return set([Proxy(*proxy) for proxy in _PAC_REGEX.findall(pac_proxies)])
+
+try:
+    from ._jscontext import JSContext as _JSContext
+
+    class JSProxyAutoConfig(PAC, _JSContext):
+        ...
+    _jspac = True
+except ImportError:
+
+    _jspac = False
+
+def load_pac(url:str, **urllib_kwds):
+    if "://" not in url:
+        url = ("file://" if url.startswith("/") else "https://") + url
+    with _urlopen(url, **urllib_kwds) as resp:
+        js = resp.read()
+    if not _jspac:
+        _warn(f"Can not load js from: {url} as pac. Install libproxy[jspac]")
+        return PAC()
+    else:
+        return JSProxyAutoConfig(js)

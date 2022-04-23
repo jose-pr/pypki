@@ -2,7 +2,7 @@ from abc import ABC
 from socket import getservbyname
 from typing import Iterable, NamedTuple, overload
 
-from ._uri import _URI_REGEX
+from ._re import _URI_REGEX
 
 
 class _Proxy(NamedTuple):
