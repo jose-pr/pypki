@@ -91,19 +91,19 @@ class PAC(ProxyMap):
     #### HOSTNAME FUNCTIONS ####
 
     @staticmethod
-    def isPlainHostname(host:str):
+    def isPlainHostname(host: str):
         return "." not in host
 
     @staticmethod
-    def dnsDomainIs(host:str, domain:str):
+    def dnsDomainIs(host: str, domain: str):
         return host.endswith(domain)
 
     @staticmethod
-    def localHostOrDomainIs(host:str, hostdom:str):
+    def localHostOrDomainIs(host: str, hostdom: str):
         return "." not in host and hostdom.startswith(host) or hostdom == host
 
     @staticmethod
-    def isResolvable(host:str):
+    def isResolvable(host: str):
         try:
             _socket.gethostbyname(host)
             return True
@@ -111,7 +111,7 @@ class PAC(ProxyMap):
             return False
 
     @staticmethod
-    def isInNet(host:str, pattern:str, mask:str):
+    def isInNet(host: str, pattern: str, mask: str):
         try:
             ip = _ip.IPv4Address(host)
         except:
@@ -119,7 +119,7 @@ class PAC(ProxyMap):
                 ip = _ip.IPv4Address(PAC.dnsResolve(host))
             except:
                 return False
-        net = _ip.IPv4Network(f"{pattern}/{mask}", strict= False)
+        net = _ip.IPv4Network(f"{pattern}/{mask}", strict=False)
         return ip in net
 
     @staticmethod
@@ -134,23 +134,28 @@ class PAC(ProxyMap):
         pac_proxies = self.FindProxyForURL(
             f"{scheme}://{host}{f':{port}' if port else ''}", host
         )
-        return set([Proxy(*proxy) for proxy in _PAC_REGEX.findall(pac_proxies)])
+        return (Proxy(*proxy) for proxy in _PAC_REGEX.findall(pac_proxies))
+
 
 try:
     from ._jscontext import JSContext as _JSContext
 
     class JSProxyAutoConfig(PAC, _JSContext):
         ...
+
     _jspac = True
 except ImportError:
 
     _jspac = False
 
-def load_pac(url:str, **urllib_kwds):
+
+def load_pac(url: str, **urllib_kwds):
     if "://" not in url:
         url = ("file://" if url.startswith("/") else "https://") + url
     with _urlopen(url, **urllib_kwds) as resp:
         js = resp.read()
+    if "FindProxyForURL" not in js:
+        raise Exception("Not FindProxyForURL found int response from: " + url)
     if not _jspac:
         _warn(f"Can not load js from: {url} as pac. Install libproxy[jspac]")
         return PAC()
