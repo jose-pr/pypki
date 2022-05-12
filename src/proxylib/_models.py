@@ -77,32 +77,9 @@ class Proxy(_URI):
     def from_uris(uri: str):
         return set([Proxy(*proxy) for proxy in _URI_REGEX.findall(uri)] if uri else [])
 
-
-class Proxy(_URI):
-    _DEFAULT_SCHEME = "http"
-
-    def __new__(
-        cls, scheme: str, username: str, password: str, host: str, port: str
-    ) -> "Proxy":
-        scheme = scheme.lower()
-        if scheme == "direct":
-            return None
-        elif scheme == "proxy":
-            scheme = "http"
-        elif scheme == "socks":
-            scheme = "socks4"
-        elif not scheme:
-            scheme = cls._DEFAULT_SCHEME
-
-        if port:
-            port = int(port)
-
-        return super().__new__(cls, scheme, username, password, host, port)
-
-    @staticmethod
-    def from_uris(uri: str):
-        return set([Proxy(*proxy) for proxy in _URI_REGEX.findall(uri)] if uri else [])
-
+    @property
+    def url(self):
+        return f"{self.scheme}://{self.netloc}"
 
 class ProxyMap(ABC):
     @overload

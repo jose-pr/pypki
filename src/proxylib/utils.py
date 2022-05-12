@@ -1,14 +1,14 @@
-from typing import TYPE_CHECKING, TypedDict as _Dict
+from typing import TYPE_CHECKING, Sequence, TypedDict as _Dict
 from socket import AddressFamily as _A
 from ._models import ProxyMap, Proxy
 from .pac import load_pac
 
 class SingleProxyMap(ProxyMap):
-    def __init__(self, proxy: Proxy = None) -> None:
-        self.proxy = proxy
+    def __init__(self, proxy: 'Proxy|Sequence[Proxy]' = None) -> None:
+        self.proxies:Sequence[Proxy] = proxy if isinstance(proxy, Sequence) else (proxy,)
 
     def __getitem__(self):
-        return [self.proxy]
+        return self.proxies
 
 
 try:
