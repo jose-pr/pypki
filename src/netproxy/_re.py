@@ -8,3 +8,4 @@ AUTHORITY = (
     rf"(?:({NON_BREAKING}*)(?::({NON_BREAKING}*))?@)?({NON_BREAKING}+)(?::({PORT}))?"
 )
 _URI_REGEX = re.compile(rf"(?:({SCHEME})://)?{AUTHORITY}(/.*)?")
+_RULE_REGEX = re.compile(r"\s*([^\s]+)\s*(.*)")

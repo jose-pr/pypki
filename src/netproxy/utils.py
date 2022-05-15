@@ -1,7 +1,12 @@
 from abc import abstractmethod
-from typing import AnyStr, Callable, Generic, OrderedDict, TypeVar
+from typing import TYPE_CHECKING, AnyStr, Callable, Generic, OrderedDict, TypeVar
 from x509creds import X509Credentials
 from twisted.internet import ssl
+from twisted.logger import Logger
+
+if TYPE_CHECKING:
+    from twisted.internet.selectreactor import SelectReactor as Reactor
+
 
 K = TypeVar("K")
 T = TypeVar("T")
