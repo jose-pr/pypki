@@ -38,3 +38,4 @@ class NetProxyCfg(_TypedDict):
     pac: "str|None"
     wsgi: "dict[str, WsgiAppCfg]"
     rules: "dict[str, RuleCfg]"
+    listen: 'list[ListenCfg]'
