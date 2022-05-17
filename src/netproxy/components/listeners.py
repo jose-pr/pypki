@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Literal
 
-from ..config import Listener
+from ..config import Endpoint, Listener
 from .http_proxy import HttpProxyFactory
 
 if TYPE_CHECKING:
@@ -21,3 +21,9 @@ class WsgiListener(Listener):
         return context.wsgi[self.app]
 
 Listener.register(WsgiListener)
+
+class ReverseProxy(Listener):
+    type:Literal['reverse_proxy'] = "reverse_proxy"
+    def _create_factory(self, context: "NetProxy"):
+        return context.sites.use(self)
+

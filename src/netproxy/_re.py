@@ -9,3 +9,4 @@ AUTHORITY = (
 )
 _URI_REGEX = re.compile(rf"(?:({SCHEME})://)?{AUTHORITY}(/.*)?")
 _RULE_REGEX = re.compile(r"\s*([^\s]+)\s*(.*)")
+_SPACE_REGEX = re.compile(r"\s*([^\s]+)\s*(.*)")

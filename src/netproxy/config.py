@@ -9,13 +9,14 @@ import json as _json
 from .models.config import *
 from .models import *
 from .utils import TLS_PROTOCOLS, as_str, Logger
-from ._re import _URI_REGEX, _RULE_REGEX
+from ._re import _URI_REGEX
 
 if TYPE_CHECKING:
     EndpointSrc: _Alias = "StructLike|str|ParseResultBytes"
     from .context import NetProxy
-    from twisted.internet.protocol import ClientFactory
+    from twisted.internet.protocol import ClientFactory, ServerFactory
     from twisted.internet.defer import Deferred
+    from twisted.internet.ssl import ClientContextFactory, ContextFactory
 
 
 class Endpoint(FactoryClass):
@@ -34,7 +35,7 @@ class Endpoint(FactoryClass):
             proto, username, password, host, port, path = _URI_REGEX.match(src).groups()
             cfg: EndpointCfg = {
                 "proto": proto,
-                "ursername": username,
+                "username": username,
                 "password": password,
                 "host": host,
                 "port": port,
@@ -43,7 +44,7 @@ class Endpoint(FactoryClass):
         elif isinstance(src, ParseResultBytes):
             cfg: EndpointCfg = {
                 "proto": src.scheme.decode("ascii"),
-                "ursername": src.username.decode("ascii") if src.username else None,
+                "username": src.username.decode("ascii") if src.username else None,
                 "password": src.password.decode("ascii") if src.password else None,
                 "host": src.hostname.decode("ascii"),
                 "port": src.port,
@@ -52,7 +53,7 @@ class Endpoint(FactoryClass):
         elif isinstance(src, Endpoint):
             cfg: EndpointCfg = {
                 "proto": src.proto,
-                "ursername": src.username,
+                "username": src.username,
                 "password": src.password,
                 "host": src.host,
                 "port": src.port,
@@ -61,7 +62,7 @@ class Endpoint(FactoryClass):
         else:
             cfg: EndpointCfg = {
                 "proto": None,
-                "ursername": None,
+                "username": None,
                 "password": None,
                 "host": None,
                 "port": None,
@@ -103,12 +104,11 @@ class Endpoint(FactoryClass):
 
     def __repr__(self) -> str:
         if hasattr(self, "__TYPE_PROP__"):
-            t = getattr(self, "__TYPE_PROP__", None)
-            if not t:
-                t = "__UNK__"
-            t = t + " "
+            t = getattr(self, self.__TYPE_PROP__, "")
         else:
             t = ""
+        if t:
+            t = t + " "
         return f"{t}{self.uri}"
 
     def __hash__(self) -> int:
@@ -140,17 +140,42 @@ class Endpoint(FactoryClass):
 
         return proto, port
 
-    def connect(self, context: NetProxy, client: ClientFactory):
+    def connect(
+        self,
+        context: "NetProxy",
+        client: "ClientFactory",
+        sslcontext: "ClientContextFactory" = None,
+    ):
         proto, port = self.get_serv()
         if proto in TLS_PROTOCOLS:
             return context.reactor.connectSSL(
                 self.host,
                 port,
                 factory=client,
-                contextFactory=context.ssl_context_factory,
+                contextFactory=sslcontext or context.default_client_ssl_context_factory,
             )
         else:
-            return context.reactor.connectTCP(self.host, port, factory=ClientFactory)
+            return context.reactor.connectTCP(self.host, port, factory=client)
+
+    def listen(
+        self,
+        context: "NetProxy",
+        server: "ServerFactory",
+        sslcontext: "ContextFactory" = None,
+    ):
+        if self.proto in TLS_PROTOCOLS:
+            return context.reactor.listenSSL(
+                self.port or 0,
+                server,
+                sslcontext or context.ca[self.host],
+                interface=self.host,
+            )
+
+        else:
+
+            return context.reactor.listenTCP(
+                self.port or 0, server, interface=self.host
+            )
 
 
 class ProxyRequest(NamedTuple):
@@ -163,21 +188,34 @@ class ProxyRequest(NamedTuple):
         for pattern, rule in self.context.rules:
             if pattern.match(target):
                 endpoint = rule.generate_endpoint_for(self)
-                endpoint.connect(factory)
+                endpoint.connect(self.context, factory)
                 return
         raise ValueError(target)
 
 
 class ProxyEndpoint(Endpoint):
     rule: "Rule"
-    context: "NetProxy"
-
-    def connect(self, client: ClientFactory):
-        return super().connect(self.context, client)
 
 
-class Listener(Endpoint):
+class Listener(FactoryClass):
     type: str = None
+    interface: Endpoint
+    __TYPE_PROP__ = "type"
+
+    def __repr__(self) -> str:
+        t = getattr(self, self.__TYPE_PROP__, "__UNK__")
+        return f"{t} at {self.interface}"
+
+    @classmethod
+    def _get_type(cls, src: StructLike) -> str:
+        return super()._get_type(src).lower()
+
+    @classmethod
+    def _normalize_src(cls, src: "ListenCfg|str") -> StructLike:
+        if isinstance(src, str):
+            type, endpoint = src.strip().split(" ", maxsplit=1)
+            return {"type": type, "interface": Endpoint(endpoint or {})}
+        return {**src, "interface": Endpoint(src.get("interface", {}))}
 
     def _logger(self, context: "NetProxy"):
         return Logger(
@@ -196,21 +234,7 @@ class Listener(Endpoint):
         if not factory:
             logger.warn(f"Cant start proxy listener due to no factory: {self}")
             return
-        if self.proto in TLS_PROTOCOLS:
-            logger.info(f"Creating TLS connectin for {self}")
-
-            def listen():
-                context.reactor.listenSSL(
-                    self.port, factory, context.ca[self.netloc], interface=self.host
-                )
-
-        else:
-            logger.info(f"Creating TCP connectin for {self}")
-
-            def listen():
-                context.reactor.listenTCP(self.port, factory, interface=self.host)
-
-        listen()
+        self.interface.listen(context, factory)
 
 
 class Rule(FactoryClass):
@@ -225,14 +249,13 @@ class Rule(FactoryClass):
     @classmethod
     def _normalize_src(cls, src: "RuleCfg|str") -> StructLike:
         if isinstance(src, str):
-            type, endpoint = _RULE_REGEX.match(src).groups()
+            type, endpoint = src.strip().split(" ", maxsplit=1)
             return {"type": type, "endpoint": Endpoint(endpoint or {})}
         return {**src, "endpoint": Endpoint(src.get("endpoint", {}))}
 
     def generate_endpoint_for(rule, request: "ProxyRequest"):
         return ProxyEndpoint(
             rule=rule,
-            context=request.context,
             proto=rule.endpoint.proto or request.endpoint.proto,
             host=rule.endpoint.host or request.endpoint.host,
             port=rule.endpoint.port or request.endpoint.port,

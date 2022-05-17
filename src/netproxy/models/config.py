@@ -8,8 +8,9 @@ class EndpointCfg(_TypedDict):
     port: str
 
 
-class ListenCfg(EndpointCfg):
+class ListenCfg(_TypedDict):
     type: str
+    interface:"EndpointCfg|str"
 
 
 class WsgiListenCfg(ListenCfg):

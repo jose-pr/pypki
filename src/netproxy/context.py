@@ -30,7 +30,7 @@ class NetProxy:
         "NetProxy", "tuple[str, Endpoint, Endpoint]", "_tcp.Port"
     ]
     vendor: "dict[str]"
-    ssl_context_factory: _DefaultSSLContextFactory
+    default_client_ssl_context_factory: _DefaultSSLContextFactory
     home_dir: Path
 
     def __init__(
@@ -53,12 +53,12 @@ class NetProxy:
             )
         else:
             self._config = config
-
         _logfile = self._config.get("logfile", None)
         if _logfile and not log:
             self._initlog(_logfile)
         elif log is None:
             self._initlog(True)
+        self.init()
 
     def _initlog(self, log: "Logger|_Observer|Path|str|bool"):
         if isinstance(log, Logger):
@@ -77,7 +77,7 @@ class NetProxy:
 
                 if isinstance(log, (str, Path)):
                     observer = textFileLogObserver(Path(log).open("w"))
-                elif isinstance(log, IO):
+                elif isinstance(log, IO) or hasattr(log, "write"):
                     observer = textFileLogObserver(log)
                 else:
                     observer = log
@@ -115,10 +115,10 @@ class NetProxy:
         config = self._config
         logger = self.logger
         if not self.home_dir:
-            self.home_dir = config.get("home_dir", DEFAULT_PROXY_PATH)
+            self.home_dir = Path(config.get("home_dir", DEFAULT_PROXY_PATH)).resolve()
         logger.info(f"Home directory is {self.home_dir}")
         self.home_dir.mkdir(exist_ok=True, parents=True)
-        self.ssl_context_factory = FunctionDeclaration(
+        self.default_client_ssl_context_factory = FunctionDeclaration(
             config.setdefault(
                 "ssl_context", {"name": _DefaultSSLContextFactory.__qualname__}
             )
@@ -154,7 +154,7 @@ class NetProxy:
                 WSGIResource(self.reactor, self.reactor.getThreadPool(), wsgiFn())
             )
 
-        ca_creds = config.setdefault("ca", "ca.p12")
+        ca_creds = self.resolve_path(config.setdefault("ca", "ca.p12"))
         logger.info(f"CA credentials from :{ca_creds}")
         ca_store = onMemoryCredentialStore(100, creds_into_twisted_options)
         self.ca = CertificateAuthority(
@@ -173,7 +173,7 @@ class NetProxy:
                 )
 
     def resolve_path(self, path: "str|Path"):
-        return self.home_dir / path
+        return (self.home_dir / path).resolve()
 
     def pac_file(self):
         return self.resolve_path(self._config["pac"])
@@ -183,16 +183,9 @@ class NetProxy:
 
 
 def generate_site(context: NetProxy, key: Endpoint):
-    from .components import ReverseProxyResource
+    from .components.reverse_proxy import ReverseProxyResource
 
-    return Site(
-        ReverseProxyResource(
-            key.host,
-            key.port,
-            context.ssl_context_factory if key.proto in TLS_PROTOCOLS else False,
-            context.reactor,
-        )
-    )
+    return Site(ReverseProxyResource(Endpoint(key, context)))
 
 
 def generate_reverse_proxy(context: NetProxy, key: "tuple[str, Endpoint, Endpoint]"):

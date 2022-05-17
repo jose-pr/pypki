@@ -22,9 +22,7 @@ class ConnectProxyRequest(Request):
     def process(self):
         uri = urlparse((b"https://" + self.uri) if b"://" not in self.uri else self.uri)
         if not uri.hostname:
-            self._local_file(
-                self.netproxy.pac_file, "application/x-ns-proxy-autoconfig"
-            )
+            self.reply(self.netproxy.pac_file, "application/x-ns-proxy-autoconfig")
             return
         try:
             request = ProxyRequest(
@@ -58,23 +56,30 @@ class ConnectProxyRequest(Request):
 
     def reply(
         self,
-        body: AnyStr = "",
+        body: "AnyStr|Path" = "",
         code=200,
-        message: AnyStr = "Ok",
+        message: AnyStr = None,
         mimetype: str = "text/html",
     ):
-        self.setResponseCode(code, as_bytes(message))
+        if isinstance(body, Path):
+            if body.exists():
+                body = body.read_bytes()
+            else:
+                code = 400
+                message = "Not Found"
+        elif body is not None:
+            body = as_bytes(body)
+
+        if message is None and 200 <= code < 300:
+            message = b"Ok"
+        else:
+            message = as_bytes(message or "")
+
+        self.setResponseCode(code, message)
         self.responseHeaders.addRawHeader("Content-Type", mimetype)
         if body is not None:
-            self.write(as_bytes(body))
+            self.write(body)
         self.finish()
-
-    def _local_file(self, path: str, mimetype: str = "text/html"):
-        path: Path = Path(path)
-        if path.exists():
-            self.reply(body=path.read_bytes(), mimetype=mimetype)
-        else:
-            self.reply(code=400, messsage="Not Found")
 
 
 class ConnectProxy(Proxy):
