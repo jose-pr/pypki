@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Literal
 
-from ..config import Rule, ProxyRequest
+from ..config import Endpoint, Rule, ProxyRequest
 from ..utils import TLS_PROTOCOLS
 
 if TYPE_CHECKING:
@@ -19,7 +19,17 @@ class DirectRule(Rule):
 Rule.register(DirectRule)
 
 
-class ProxyRule(Rule):
+class _ReverseProxyRule(Rule):
+    def generate_endpoint_for(rule, request: "ProxyRequest"):
+        endpoint = super().generate_endpoint_for(request)
+        key = (rule.type, request.endpoint, Endpoint(endpoint))
+        reverse_proxy = request.context.reverse_proxies.use(key)
+        request.on_finish.addBoth(lambda _: request.context.reverse_proxies.done(key))
+        endpoint.host = request.context.interface
+        endpoint.port = reverse_proxy._realPortNumber
+        return endpoint
+
+class ProxyRule(_ReverseProxyRule):
     type: Literal["proxy"] = "proxy"
 
     def generate_endpoint_for(rule, request: "ProxyRequest"):
@@ -33,7 +43,7 @@ class ProxyRule(Rule):
 Rule.register(ProxyRule)
 
 
-class WsgiRule(Rule):
+class WsgiRule(_ReverseProxyRule):
     type: Literal["wsgi"] = "wsgi"
 
     def generate_endpoint_for(rule, request: "ProxyRequest"):

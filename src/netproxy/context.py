@@ -120,9 +120,14 @@ class NetProxy:
         self.home_dir.mkdir(exist_ok=True, parents=True)
         self.default_client_ssl_context_factory = FunctionDeclaration(
             config.setdefault(
-                "ssl_context", {"name": _DefaultSSLContextFactory.__qualname__}
+                "ssl_context",
+                {
+                    "name": _DefaultSSLContextFactory.__module__
+                    + "."
+                    + _DefaultSSLContextFactory.__qualname__
+                },
             )
-        )
+        )()
         self.rules = []
         for pattern, rule in config.setdefault("rules", {}).items():
             regex, rule = re.compile(pattern), Rule(rule)
@@ -177,7 +182,8 @@ class NetProxy:
 
     def pac_file(self):
         return self.resolve_path(self._config["pac"])
-
+    
+    @property
     def interface(self) -> str:
         return self._config["private_interface"]
 
@@ -185,7 +191,7 @@ class NetProxy:
 def generate_site(context: NetProxy, key: Endpoint):
     from .components.reverse_proxy import ReverseProxyResource
 
-    return Site(ReverseProxyResource(Endpoint(key, context)))
+    return Site(ReverseProxyResource(Endpoint(key), context))
 
 
 def generate_reverse_proxy(context: NetProxy, key: "tuple[str, Endpoint, Endpoint]"):

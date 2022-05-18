@@ -249,7 +249,7 @@ class Rule(FactoryClass):
     @classmethod
     def _normalize_src(cls, src: "RuleCfg|str") -> StructLike:
         if isinstance(src, str):
-            type, endpoint = src.strip().split(" ", maxsplit=1)
+            type, endpoint, *_ = src.strip().split(" ", maxsplit=1) + [None]
             return {"type": type, "endpoint": Endpoint(endpoint or {})}
         return {**src, "endpoint": Endpoint(src.get("endpoint", {}))}
 

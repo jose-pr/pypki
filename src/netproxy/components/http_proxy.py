@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, AnyStr
-from twisted.web.http import Request, HTTPFactory
+from requests import request
+from twisted.web.http import Request, HTTPFactory, _REQUEST_TIMEOUT
 from twisted.web.proxy import Proxy, ProxyClientFactory
 from twisted.internet.protocol import Protocol, ClientFactory
 from urllib.parse import urlparse
@@ -12,8 +13,8 @@ if TYPE_CHECKING:
     from ..context import NetProxy
 
 
-class ConnectProxyRequest(Request):
-    channel: "ConnectProxy"
+class HttpProxyRequest(Request):
+    channel: "HttpProxy"
 
     @property
     def netproxy(self):
@@ -82,22 +83,64 @@ class ConnectProxyRequest(Request):
         self.finish()
 
 
-class ConnectProxy(Proxy):
+class HttpProxy(Proxy):
     factory: "HttpProxyFactory"
-    requestFactory: ConnectProxyRequest
-    connectedRemote: "ConntectProxyClient|None"
+    requestFactory: HttpProxyRequest = HttpProxyRequest
+    connectedRemote: "ConntectProxyClient|None" = None
+
+    def requestDone(self, request: HttpProxyRequest):
+        if request.method == b"CONNECT" and self.connectedRemote is not None:
+            self.connectedRemote.connectedClient = self
+            self._handlingRequest = False
+            self._networkProducer.resumeProducing()
+            if self._savedTimeOut:
+                self.setTimeout(self._savedTimeOut)
+            data = b"".join(self._dataBuffer)
+            self._dataBuffer = []
+            self.setLineMode(data)
+        else:
+            super().requestDone(request)
+
+    def connectionLost(self, reason):
+        if self.connectedRemote is not None:
+            self.connectedRemote.transport.loseConnection()
+        else:
+            super().connectionLost(reason)
+
+    def dataReceived(self, data):
+        if self.connectedRemote is not None:
+            self.connectedRemote.transport.write(data)
+        else:
+            return super().dataReceived(data)
 
 
 class ConntectProxyClient(Protocol):
-    connectedClient: ConnectProxy
+    connectedClient: HttpProxy
     factory: "ConnectProxyClientFactory"
+
+    def connectionMade(self):
+        request = self.factory.request
+        request.channel.connectedRemote = self
+        request.setResponseCode(200, b"CONNECT OK")
+        request.setHeader("Content-Length", "0")
+        request.finish()
+
+    def connectionLost(self, reason=...):
+        if self.connectedClient is not None:
+            self.connectedClient.transport.loseConnection()
+
+    def dataReceived(self, data: bytes):
+        if self.connectedClient is not None:
+            self.connectedClient.transport.write(data)
+        else:
+            self.factory.request.netproxy.logger.error("Unexpected data received")
 
 
 class ConnectProxyClientFactory(ClientFactory):
     protocol = ConntectProxyClient
-    request: ConnectProxyRequest
+    request: HttpProxyRequest
 
-    def __init__(self, request: ConnectProxyRequest) -> None:
+    def __init__(self, request: HttpProxyRequest) -> None:
         self.request = request
 
     def clientConnectionFailed(self, connector, reason):
@@ -106,13 +149,13 @@ class ConnectProxyClientFactory(ClientFactory):
 
 class HttpProxyFactory(HTTPFactory):
     netproxy: "NetProxy"
-    protocol = ConnectProxy
+    protocol = HttpProxy
 
     def __init__(
         self,
         netproxy: "NetProxy",
         logPath=None,
-        timeout=...,
+        timeout=_REQUEST_TIMEOUT,
         logFormatter=None,
         reactor=None,
     ):
