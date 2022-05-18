@@ -1,5 +1,5 @@
 from typing import TYPE_CHECKING
-from twisted.web.proxy import ProxyClient, ProxyClientFactory
+from twisted.web.proxy import ProxyClientFactory
 from twisted.web.resource import Resource
 from twisted.web.http import Request
 from twisted.web.server import NOT_DONE_YET
@@ -9,8 +9,6 @@ from netproxy.config import Endpoint
 
 if TYPE_CHECKING:
     from ..context import NetProxy
-    from ..utils import Reactor
-
 
 class ReverseProxyResource(Resource):
     def __init__(self, target: Endpoint, netproxy: "NetProxy"):

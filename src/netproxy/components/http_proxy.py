@@ -1,5 +1,5 @@
+from http import HTTPStatus
 from typing import TYPE_CHECKING, AnyStr
-from requests import request
 from twisted.web.http import Request, HTTPFactory, _REQUEST_TIMEOUT
 from twisted.web.proxy import Proxy, ProxyClientFactory
 from twisted.internet.protocol import Protocol, ClientFactory
@@ -66,13 +66,15 @@ class HttpProxyRequest(Request):
             if body.exists():
                 body = body.read_bytes()
             else:
-                code = 400
-                message = "Not Found"
+                code = 404
         elif body is not None:
             body = as_bytes(body)
 
-        if message is None and 200 <= code < 300:
-            message = b"Ok"
+        if message is None:
+            try:
+                message = HTTPStatus(code).phrase.encode("ascii")
+            except ValueError:
+                pass
         else:
             message = as_bytes(message or "")
 
@@ -144,7 +146,7 @@ class ConnectProxyClientFactory(ClientFactory):
         self.request = request
 
     def clientConnectionFailed(self, connector, reason):
-        self.request.reply(message="Gateway Error", body=str(reason), code=501)
+        self.request.reply(body=str(reason), code=502)
 
 
 class HttpProxyFactory(HTTPFactory):

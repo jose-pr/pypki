@@ -1,4 +1,5 @@
 from typing import IO, TYPE_CHECKING
+from typing_extensions import TypeAlias as _Alias
 from re import Pattern as _Pattern
 import re
 from twisted.web.server import Site
@@ -13,8 +14,10 @@ from .constants import DEFAULT_PROXY_PATH
 
 if TYPE_CHECKING:
     from .utils import Reactor
-    from twisted.internet import tcp as _tcp
+    from twisted.internet.tcp import Port as _Port
     from twisted.logger import ILogObserver as _Observer
+
+_RevProxyKey: _Alias = "tuple[str, Endpoint, Endpoint]"
 
 
 class NetProxy:
@@ -26,9 +29,7 @@ class NetProxy:
     ca: "CertificateAuthority"
     _config: NetProxyCfg
     sites: CachedFactory["NetProxy", Endpoint, Site]
-    reverse_proxies: CachedFactory[
-        "NetProxy", "tuple[str, Endpoint, Endpoint]", "_tcp.Port"
-    ]
+    reverse_proxies: CachedFactory["NetProxy", "_RevProxyKey", "_Port"]
     vendor: "dict[str]"
     default_client_ssl_context_factory: _DefaultSSLContextFactory
     home_dir: Path
@@ -141,6 +142,30 @@ class NetProxy:
         logger.info("Listening <{interface}> internally", interface=interface)
         pac = config.setdefault("pac", "proxy.pac")
         logger.info("Using <{pac}> for proxy auto configuration", pac=pac)
+        from .components.reverse_proxy import ReverseProxyResource
+
+        def generate_site(context: NetProxy, key: Endpoint):
+            return Site(ReverseProxyResource(Endpoint(key), context))
+
+        def generate_reverse_proxy(context: NetProxy, key: "_RevProxyKey"):
+            type, at, target = key
+            site = (
+                context.wsgi[target.host]
+                if type == "wsgi"
+                else context.sites.use(target)
+            )
+            return Endpoint(proto=at.proto, host=context.interface, port=0).listen(
+                context, site, context.ca[at.host]
+            )
+
+        def remove_reverse_proxy(
+            context: NetProxy, proxy: "_Port", key: "_RevProxyKey"
+        ):
+            type, at, target = key
+            if type != "wsgi":
+                context.sites.done(target)
+            proxy.stopListening()
+
         self.reverse_proxies = CachedFactory(
             self, generate_reverse_proxy, remove_reverse_proxy, 10
         )
@@ -182,34 +207,7 @@ class NetProxy:
 
     def pac_file(self):
         return self.resolve_path(self._config["pac"])
-    
+
     @property
     def interface(self) -> str:
         return self._config["private_interface"]
-
-
-def generate_site(context: NetProxy, key: Endpoint):
-    from .components.reverse_proxy import ReverseProxyResource
-
-    return Site(ReverseProxyResource(Endpoint(key), context))
-
-
-def generate_reverse_proxy(context: NetProxy, key: "tuple[str, Endpoint, Endpoint]"):
-    type, at, target = key
-    site = context.wsgi[target.host] if type == "wsgi" else context.sites.use(target)
-    return (
-        context.reactor.listenSSL(
-            0, site, context.ca[at.host], interface=context.interface
-        )
-        if at.proto in TLS_PROTOCOLS
-        else context.reactor.listenTCP(0, site, interface=context.interface)
-    )
-
-
-def remove_reverse_proxy(
-    context: NetProxy, proxy: "_tcp.Port", key: "tuple[str, Endpoint, Endpoint]"
-):
-    type, at, target = key
-    if type != "wsgi":
-        context.sites.done(target)
-    proxy.stopListening()
