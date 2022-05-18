@@ -99,8 +99,7 @@ class Endpoint(FactoryClass):
     @property
     def uri(self):
         proto = f"{self.proto}://" if self.proto else ""
-        path = f"/{self.path}" if self.path else ""
-        return f"{proto}{self.authority}{path}"
+        return f"{proto}{self.authority}{self.path or ''}"
 
     def __repr__(self) -> str:
         if hasattr(self, "__TYPE_PROP__"):
