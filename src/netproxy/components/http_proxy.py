@@ -60,7 +60,7 @@ class HttpProxyRequest(Request):
         body: "AnyStr|Path" = "",
         code=200,
         message: AnyStr = None,
-        mimetype: str = "text/html",
+        mimetype: str = None,
     ):
         if isinstance(body, Path):
             if body.exists():
@@ -79,7 +79,7 @@ class HttpProxyRequest(Request):
             message = as_bytes(message or "")
 
         self.setResponseCode(code, message)
-        self.responseHeaders.addRawHeader("Content-Type", mimetype)
+        self.responseHeaders.addRawHeader("Content-Type", mimetype or "text/html")
         if body is not None:
             self.write(body)
         self.finish()

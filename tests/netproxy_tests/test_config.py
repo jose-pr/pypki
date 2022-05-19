@@ -82,6 +82,14 @@ def test_endpoint(endpoint_parts: "dict"):
         assert endpoint.path == parts.get("path")
         assert endpoint.uri == uri
 
+def test_getserv():
+    for proto, port in [("https", 443), ("http", 80), ("ftp", 21), ("ssh", 22)]:
+        assert (proto, port) == Endpoint(port=port).get_serv()
+        assert (proto, port) == Endpoint(proto=proto).get_serv()
+
+    
+
+
 
 if __name__ == "__main__":
     test_endpoint()

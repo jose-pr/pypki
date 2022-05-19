@@ -1,1 +1,2 @@
-Placeholder
+NetProxy is a proxy based on twisted, it can be initiaded based on toml config file and it can act as HTTP/HTTPS Proxy a Connect Proxy, a WSGI Server and as a Reverse Proxy (Which can be used to provide authentication to clients to external services).
+It can be configured to proxy the request depending on requested address. 
