@@ -1,5 +1,4 @@
 from abc import ABC as _ABC, abstractmethod as _abstractmethod
-from functools import reduce as _reduce
 from typing import (
     TYPE_CHECKING,
     overload,

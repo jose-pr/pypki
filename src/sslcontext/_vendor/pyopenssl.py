@@ -20,14 +20,11 @@ You can install them with the following command:
     $ python -m pip install pyopenssl cryptography
 """
 from __future__ import absolute_import
-from enum import IntEnum
-from typing_extensions import TypeGuard
 
 import OpenSSL.SSL
 from OpenSSL import crypto
 from cryptography import x509
-from io import BytesIO
-from socket import error as SocketError, socket
+from socket import error as SocketError
 from socket import timeout
 
 from .wait import wait_for_read, wait_for_write
@@ -78,7 +75,7 @@ except ImportError:
 
     def _idna_encode(name: str) -> bytes:
         try:
-            return encodings.search_function("idna").encode()[0]
+            return encodings.search_function("idna").encode(name)[0]
         except:
             return None
 
@@ -157,7 +154,7 @@ def get_subj_alt_name(peer_cert: crypto.X509):
     return names
 
 
-from ..interface import SSLSocket
+from ..interface import SSLSocket, SSLContext
 
 
 class PyOpenSSLSocket(SSLSocket):
@@ -281,9 +278,6 @@ class PyOpenSSLSocket(SSLSocket):
 
     def shutdown(self):
         self.connection.shutdown()
-
-
-from ..interface import SSLContext
 
 
 class PyOpenSSLContext(SSLContext):

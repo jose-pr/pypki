@@ -1,12 +1,11 @@
 import base64
-from sys import maxsize
 from urllib.parse import unquote
-from typing import TYPE_CHECKING, Mapping
+from typing import Mapping
 from requests import PreparedRequest, Response, Request
 
 from sslcontext import SSLContext
 from requests.adapters import HTTPAdapter, Retry
-from urllib3 import PoolManager, ProxyManager
+from urllib3 import HTTPConnectionPool, PoolManager, ProxyManager
 from urllib3.exceptions import ProxyError, ConnectionError
 from requests.exceptions import ProxyError, InvalidProxyURL, ConnectionError
 from requests.utils import select_proxy, prepend_scheme_if_needed
@@ -110,7 +109,8 @@ class HTTPAdapterExtended(HTTPAdapter):
         return super().request_url(request, {"all": proxy.url} if proxy else {})
 
     def get_connection(self, url, proxies: ProxyMap = ...):
-        url = prepend_scheme_if_needed(url, "http")
+        # Shouldnt be needed
+        # url = prepend_scheme_if_needed(url, "http")
         errs = []
         for proxy in proxies[url] or [None]:
             if proxy:
@@ -129,9 +129,16 @@ class HTTPAdapterExtended(HTTPAdapter):
         err = errs[0] if len(errs) == 1 else ConnectionError(errs)
         raise err
 
-    def cert_verify(self, conn, url: str, verify: "SSLContext|None|bool|str", cert):
+    def cert_verify(
+        self,
+        conn: HTTPConnectionPool,
+        url: str,
+        verify: "SSLContext|None|bool|str",
+        cert: "tuple|str",
+    ):
         if verify is True:
-            url = prepend_scheme_if_needed(url, "http")
+            # Shouldnt be needed
+            # url = prepend_scheme_if_needed(url, "http")
             if url.startswith("https://"):
                 ctx = self.sslcontexts[url]
                 if ctx is None:
