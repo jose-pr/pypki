@@ -4,7 +4,13 @@ from typing import Mapping
 from requests import PreparedRequest, Response, Request
 
 from sslcontext import SSLContext
-from requests.adapters import HTTPAdapter, Retry
+from requests.adapters import (
+    HTTPAdapter,
+    Retry,
+    DEFAULT_POOLSIZE,
+    DEFAULT_RETRIES,
+    DEFAULT_POOLBLOCK,
+)
 from urllib3 import HTTPConnectionPool, PoolManager, ProxyManager
 from urllib3.exceptions import ProxyError, ConnectionError
 from requests.exceptions import ProxyError, InvalidProxyURL, ConnectionError
@@ -28,7 +34,7 @@ class _RequestsProxyMap(ProxyMap):
         self.proxies = proxies
 
     def __getitem__(self, uri: str):
-        return Proxy.from_uris(select_proxy(uri))
+        return Proxy.from_uris(select_proxy(uri, self.proxies))
 
 
 class HTTPAdapterExtended(HTTPAdapter):
@@ -37,10 +43,10 @@ class HTTPAdapterExtended(HTTPAdapter):
 
     def __init__(
         self,
-        pool_connections: int = ...,
-        pool_maxsize: int = ...,
-        max_retries: "Retry | int | None" = ...,
-        pool_block: bool = ...,
+        pool_connections: int = DEFAULT_POOLSIZE,
+        pool_maxsize: int = DEFAULT_POOLSIZE,
+        max_retries: "Retry | int | None" = DEFAULT_RETRIES,
+        pool_block: bool = DEFAULT_POOLBLOCK,
         sslcontexts: "SSLContextMap" = None,
         proxies: ProxyMap = None,
     ) -> None:
@@ -85,11 +91,11 @@ class HTTPAdapterExtended(HTTPAdapter):
     def send(
         self,
         request: PreparedRequest,
-        stream: bool = ...,
-        timeout: "None | float | tuple[float, float] | tuple[float, None]" = ...,
-        verify: "bool | str" = ...,
-        cert: "None | bytes | str | tuple[bytes | str, bytes | str]" = ...,
-        proxies: "Mapping[str, str] | ProxyMap | None | str" = ...,
+        stream: bool = False,
+        timeout: "None | float | tuple[float, float] | tuple[float, None]" = None,
+        verify: "bool | str" = True,
+        cert: "None | bytes | str | tuple[bytes | str, bytes | str]" = None,
+        proxies: "Mapping[str, str] | ProxyMap | None | str" = None,
     ) -> Response:
         if isinstance(proxies, ProxyMap):
             pass
@@ -105,7 +111,7 @@ class HTTPAdapterExtended(HTTPAdapter):
         return super().send(request, stream, timeout, verify, cert, proxies)
 
     def request_url(self, request: Request, proxies: ProxyMap):
-        proxy: Proxy = next(proxies[request.url], None)
+        proxy: Proxy = next(iter(proxies[request.url]), None)
         return super().request_url(request, {"all": proxy.url} if proxy else {})
 
     def get_connection(self, url, proxies: ProxyMap = ...):
@@ -141,8 +147,8 @@ class HTTPAdapterExtended(HTTPAdapter):
             # url = prepend_scheme_if_needed(url, "http")
             if url.startswith("https://"):
                 ctx = self.sslcontexts[url]
-                if ctx is None:
-                    verify = True
+                if ctx is not None:
+                    verify = ctx
 
         if verify and isinstance(verify, SSLContext):
             if cert:

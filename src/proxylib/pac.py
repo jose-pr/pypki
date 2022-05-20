@@ -153,7 +153,7 @@ def load_pac(url: str, **urllib_kwds):
     if "://" not in url:
         url = ("file://" if url.startswith("/") else "https://") + url
     with _urlopen(url, **urllib_kwds) as resp:
-        js = resp.read()
+        js = _cast(bytes, resp.read()).decode()
     if "FindProxyForURL" not in js:
         raise Exception("Not FindProxyForURL found int response from: " + url)
     if not _jspac:

@@ -3,7 +3,7 @@ from ._vendor.ssl import *
 
 try:
     from ssl import SSLContext as NativeSSLContext, _SSLMethod
-    NativeSSLContext.pyopenssl = lambda : None
+    NativeSSLContext.pyopenssl = lambda *args : None
     SSLContext.register(NativeSSLContext)
 except ImportError:
     pass

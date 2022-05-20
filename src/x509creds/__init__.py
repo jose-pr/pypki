@@ -272,7 +272,7 @@ class X509Credentials(_X509Credentials, X509Issuer):
 
     def apply_to_sslcontext(self, sslcontext: "SSLContext"):
         pyopenssl = get_pyopenssl_ctx(sslcontext)
-        if cert:
+        if pyopenssl:
             key, cert, chain = self.to_pyopenssl()
             store = pyopenssl.get_cert_store()
             store.add_cert(cert)
